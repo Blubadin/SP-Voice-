@@ -1,0 +1,4 @@
+import {handleApi,ApiEnv} from './api';
+// @ts-expect-error Build-time module embeds only public build output, never secrets.
+import assets from 'virtual:assets';
+export default {async fetch(request:Request,env:ApiEnv){const path=new URL(request.url).pathname;if(path.startsWith('/api/'))return handleApi(request,env);if(!['GET','HEAD'].includes(request.method))return new Response('Method not allowed',{status:405});const asset=assets[path]||(path==='/'||!path.split('/').at(-1)?.includes('.')?assets['/index.html']:null);if(!asset)return new Response('Not found',{status:404});return new Response(request.method==='HEAD'?null:asset.content,{headers:{'content-type':asset.mime,'cache-control':path.startsWith('/assets/')?'public,max-age=31536000,immutable':'no-cache','x-content-type-options':'nosniff'}});}};

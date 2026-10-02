@@ -1,0 +1,6 @@
+{
+  "name": "SportScout Voice",
+  "description": "Voice-first sports scouting application for live badminton and volleyball match analysis.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
