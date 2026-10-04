@@ -1,7 +1,7 @@
-import {INITIAL_SKILLS} from '../sports/skillData';
-import type {SkillItem} from '../types/scout';
-import {actions} from './validation';
-import {SportType,Side} from './types';
+import {INITIAL_SKILLS} from '../sports/skillData.js';
+import type {SkillItem} from '../types/scout.js';
+import {actions} from './validation.js';
+import type {SportType,Side} from './types.js';
 export const actorAliases={A:['A','เอ','ทีมเอ','ทีม เอ','ทีม A','ฝั่งเอ','ฝั่ง เอ','ฝั่ง A'],B:['B','บี','ทีมบี','ทีม บี','ทีม B','ฝั่งบี','ฝั่ง บี','ฝั่ง B']};
 // Synonyms name observations; tactical variants stay subtypes, never extra legal actions.
 export const sportVocabulary={

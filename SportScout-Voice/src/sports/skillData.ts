@@ -1,4 +1,4 @@
-import { SkillItem, SportType } from '../types/scout';
+import type { SkillItem, SportType } from '../types/scout.js';
 
 export const INITIAL_SKILLS: SkillItem[] = [
   // Badminton

@@ -1,4 +1,4 @@
-import {ScoutEvent, SportType} from './types';
+import type {ScoutEvent, SportType} from './types.js';
 export const actions = {badminton:['Serve','Return','Clear','Drop','Smash','Drive','Lift','Net Shot','Net Kill','Block'],volleyball:['Serve','Reception','Set','Attack','Block','Dig','Free Ball','Cover','Overpass','Error']};
 export const zones = {badminton:['Front Left','Front Center','Front Right','Mid Left','Mid Center','Mid Right','Rear Left','Rear Center','Rear Right'],volleyball:['Zone 1','Zone 2','Zone 3','Zone 4','Zone 5','Zone 6']};
 export function validationErrors(e: Partial<ScoutEvent>): string[] {

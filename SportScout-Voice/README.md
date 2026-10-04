@@ -9,6 +9,7 @@ npm ci
 npm run dev:server
 npm run lint
 npm test
+npm run check:vercel-api
 npm run build:vercel
 ```
 
@@ -34,6 +35,8 @@ Expensive API requests have a bounded per-instance limit (60/minute/client). Thi
 - PCM uses 1024-sample packets (about21ms at48kHz), drains the partial tail and waits for provider finalization. Reconnects and lost buffers are visible and require review. No confidence value is presented as measured accuracy.
 - Session storage has independent localStorage/IndexedDB writes, waits for transactions, recovers the newer timestamped snapshot and deletes removed sessions from the mirror. Both failing shows an export warning. Data remains local; there is no cross-device sync.
 - Secondary tabs load on demand. Text Test Lab uses scenario labels for accuracy denominators, reports N/A without samples, and does not claim to measure microphone latency.
+
+The Vercel build also compiles the API to JavaScript and invokes it using native Node ESM without tsx. Relative runtime imports use `.js` specifiers so production can resolve every module.
 
 ## Limits of verification
 
