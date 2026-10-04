@@ -1,5 +1,5 @@
 import type {IncomingMessage,ServerResponse} from 'node:http';
-import {handleApi, type ApiEnv,json} from '../src/server/api';
+import {handleApi, type ApiEnv,json} from '../src/server/api.js';
 
 export const config={maxDuration:60};
 export default async function handler(req:IncomingMessage & {body?:unknown},res:ServerResponse){

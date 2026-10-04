@@ -1,4 +1,4 @@
-import {
+import type {
   ActorPlayer,
   EventSource,
   EventStatus,
@@ -12,9 +12,9 @@ import {
   SportDefinition,
   SportStats,
   SportType,
-} from '../domain/types';
+} from '../domain/types.js';
 
-export * from '../domain/types';
+export type * from '../domain/types.js';
 
 export type LanguageMode = 'th' | 'en' | 'mixed';
 

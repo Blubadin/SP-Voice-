@@ -1,7 +1,7 @@
-import {vocabularyPrompt,canonicalSide,getVocabulary} from '../domain/scoutVocabulary';
-import {isSilentPcmWav} from './silentAudio';
-import {readProviderKey,saveProviderKey,KeyStoreEnv} from './keyStore';
-import {actions,zones,validationErrors} from '../domain/validation';
+import {vocabularyPrompt,canonicalSide,getVocabulary} from '../domain/scoutVocabulary.js';
+import {isSilentPcmWav} from './silentAudio.js';
+import {readProviderKey,saveProviderKey,KeyStoreEnv} from './keyStore.js';
+import {actions,zones,validationErrors} from '../domain/validation.js';
 export interface ApiEnv extends KeyStoreEnv {SETTINGS_OWNER_EMAIL?:string;TRUST_PLATFORM_IDENTITY?:string;VERCEL?:string;SCOUT_ACCESS_TOKEN?:string;DEEPGRAM_API_KEY?:string;GEMINI_API_KEY?:string;GEMINI_MODEL?:string;GEMINI_FALLBACK_MODEL?:string;GEMINI_AUDIO_FALLBACK_MODEL?:string;GEMINI_AUDIO_MODEL?:string}
 const defaultModel='gemini-3.8-flash';
 export const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});
