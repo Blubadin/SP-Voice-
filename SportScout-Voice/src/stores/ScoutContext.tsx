@@ -63,6 +63,7 @@ interface ScoutContextType {
   startListening: () => void;
   stopListening: () => void;
   processSamplePhrase: (sample: VoicePresetSample | string) => void;
+  finalizePendingTranscript:()=>boolean;
   processUtterance: (text: string, durationMs?: number) => Promise<void>;
   undoLastEvent: () => void;
   editLastEvent: () => void;
@@ -287,6 +288,7 @@ export const ScoutProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setCurrentTranscript(text);
 
     const context: InterpretationContext = {
+      aiAvailable:forceReview?false:apiStatus.status==='available'?apiStatus.hasApiKey:undefined,
       inheritedTeam:streamMeta?streamTeam.current:undefined,
       skills:latestSkills.current,
       pendingContact:targetSession.events.find(e=>e.rallyId===streamRally.current&&e.status==='CONFIRMED'),
@@ -383,7 +385,9 @@ export const ScoutProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }, 1800);
         }
       } else {
-        // No event interpreted from speech (e.g. irrelevant noise)
+        // Keep a visible explanation instead of an empty DRAFT beside a transcript.
+        setCurrentParsedEvent(null);
+        setMicError('ไม่พบทักษะที่แยกได้จากข้อความนี้ ตรวจชนิดกีฬา หรือแก้ข้อความถอดเสียงแล้วลองอีกครั้ง / No recognized action. Check the sport or edit the transcript.');
         setVoiceState('review_required');
         if (settings.feedbackSound) playAudioFeedback('review');
         activeTimerRef.current = setTimeout(() => {
@@ -415,6 +419,11 @@ export const ScoutProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const captureSession=currentSession;listeningIntentRef.current=true;setMicError(null);setCurrentTranscript('');setLiveTags([]);streamRally.current=crypto.randomUUID();streamSeen.current.clear();previewCues.current.clear();streamTeam.current=undefined;
       const started=await continuousProvider.start({onLevel:setAudioLevel,onStatus:status=>{setIsRealMicActive(status!=='stopped');setVoiceState(status==='connecting'||status==='reconnecting'?'preparing':status==='stopped'?'ready':'listening');if(status==='stopped')listeningIntentRef.current=false;},onError:setMicError,onTranscript:(id,text,final,evidence)=>{
         setCurrentTranscript(text);const extracted=extractLiveSequence(text,captureSession.sport,captureSession.playerA.name,captureSession.playerB.name,streamTeam.current,getVocabulary(captureSession.sport,latestSkills.current));
+        if(!final){
+          const last=extracted.events.at(-1);
+          setCurrentParsedEvent(last?{...last,id:'preview:'+id,sessionId:captureSession.id,timestamp:new Date().toISOString(),sport:captureSession.sport,source:'voice',status:'DRAFT',action:last.action!,outcome:last.outcome!,scoreImpact:last.scoreImpact!,player:last.actorSide}:null);
+          setVoiceState('listening');
+        }
         setLiveTags(extracted.events.filter(e=>e.action).flatMap(e=>[e.actorSide||'?',e.actorPlayer?.jerseyNumber?'#'+e.actorPlayer.jerseyNumber:'',e.action!,e.originZone?'จาก '+e.originZone:'',e.targetZone?'ไป '+e.targetZone:'',e.receptionQuality!==undefined?'รับ '+e.receptionQuality:''].filter(Boolean)));
         if(!final&&settings.feedbackSound)extracted.events.forEach((e,i)=>{if(!e.action)return;const key=`${id}:${i}:${e.action}`;if(!previewCues.current.has(key)){previewCues.current.add(key);playAudioFeedback('beep');}});
         if(!final||streamSeen.current.has(id))return;
@@ -630,6 +639,7 @@ export const ScoutProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         stopListening,
         processSamplePhrase,
         processUtterance,
+        finalizePendingTranscript:()=>continuousProvider.finalizePendingTranscript(),
         undoLastEvent,
         editLastEvent,
         deleteEvent,

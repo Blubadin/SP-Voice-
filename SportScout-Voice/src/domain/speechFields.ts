@@ -1,9 +1,10 @@
+import {normalizeSpeechText} from './speechText';
 import type {SportType} from './types';
 
 export const correctionPattern=/(?:เฮ้ย\s*ไม่ใช่|เอ้ย|เอ๊ย|ไม่ใช่|ขอแก้|แก้เป็น|เปลี่ยนเป็น|หมายถึง|sorry\s+actually|actually|correction)/i;
 const outcomeRx=/(ไม่ได้แต้ม|ไม่เอาแต้ม|ยังเล่นต่อ|เล่นต่อ|in[ -]?play|ติดบล็อก|โดนบล็อก|ถูกบล็อก|blocked|ติดเน็ต|เสียแต้ม|เสียเอง|ตีออก|เสิร์ฟเสีย|เสิร์ฟออก|ผิดพลาด|error|out\b|ออก(?=ได้|บวก|[\s,.!]|$)|ได้แต้ม|ได้หนึ่ง(?:แต้ม)?|บวก\s*(?:หนึ่ง|1)|\+\s*1|เป็นแต้ม|winner|เอซ|ace\b|คิล|kill\b)/gi;
 export function outcomeFields(text:string,action:string,sport:SportType,implied=false) {
-  const clauses=text.split(correctionPattern);
+  const clauses=normalizeSpeechText(text).split(correctionPattern);
   let tokens:string[]=[];
   for(const clause of clauses){const found=[...clause.matchAll(outcomeRx)].map(m=>m[0]);if(found.length)tokens=found;}
   const loss=tokens.some(t=>/ติด|เสีย|ออก|ผิดพลาด|error|out|blocked|โดน|ถูก/i.test(t));
@@ -30,6 +31,7 @@ export function spatialFields(text:string,getZone:(s:string)=>string|undefined) 
 
 // Only complete outcome phrases can attach to a single pending contact.
 export function isOutcomeOnly(raw:string) {
+  raw=normalizeSpeechText(raw);
   const clean=raw.replace(outcomeRx,' ').replace(/เอ่อ|อ่า|ครับ|ค่ะ|นะ|เลย/g,' ').replace(/[\s,.!?ๆ]/g,'');
   return !clean&&outcomeFields(raw,'Smash','badminton').recognized;
 }

@@ -41,3 +41,9 @@ The Vercel build also compiles the API to JavaScript and invokes it using native
 ## Limits of verification
 
 Automated tests use real React context flows with mocked providers, PCM transports and provider responses. They do not measure Thai speech accuracy, noisy-court latency, Bluetooth routing or physical microphones. Browser recognition uses the operating system's microphone selection; the selected app device controls Deepgram/recorded audio. For field validation, record utterance-end-to-score time and compare transcript/event/score against annotated real audio; retain review for uncertain speech.
+
+### Browser live speech endpoints
+
+Browser recognition now shows provisional event chips as text arrives. After a hypothesis stays unchanged for 1.5 seconds, it requests a speech endpoint and restarts recognition. Native final results use the local vocabulary rules; unfinished results are saved for review and cannot change scores until confirmed. The “Interpret latest transcript” button can request an endpoint immediately, and “Edit transcript text” lets users repair a misheard phrase. Repeated indexed final results cannot add another event.
+
+Thai spaces inside words are normalized without changing the saved original transcript or removing negation. Volleyball recognizes “quick spike” / “ตีเร็ว”; unfamiliar placement such as “บนขวา” and phrases for the wrong sport still require review. When health reports no AI key, ambiguous local results do not wait for a failing AI request. Automated browser tests simulate recognition callbacks; actual microphone recognition accuracy still requires tests on the target device.

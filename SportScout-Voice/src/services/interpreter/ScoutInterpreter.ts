@@ -15,6 +15,7 @@ import { getBadmintonZoneCoords } from '../../sports/badminton';
 import { getVolleyballZoneCoords } from '../../sports/volleyball';
 
 export interface InterpretationContext {
+  aiAvailable?:boolean;
   skills?:SkillItem[];
   pendingContact?:ParsedEvent;
   inheritedTeam?:{side:Side;action:string};
@@ -69,6 +70,7 @@ export class GeminiServerInterpreter implements ScoutInterpreterProvider {
  if(controlIntent)return {events:[],corrections:[],unknownFields:[],controlIntent,needsReview:false,confidence:0,model:'LOCAL_CONTROL',provider:'RULES (no AI request)',latencies:{speechMs:speechDurationMs,aiMs:0,totalMs:speechDurationMs},rawTranscript:utterance};
  const grammar=extractLiveSequence(utterance,context.sport,context.playerAName,context.playerBName,context.inheritedTeam,getVocabulary(context.sport,context.skills));
  if(!grammar.needsReview){const timestamp=new Date().toISOString();const rallyId=crypto.randomUUID();const events:ParsedEvent[]=grammar.events.map(e=>({...e,id:crypto.randomUUID(),sessionId:'current',rallyId,sport:context.sport,timestamp,confirmedAt:timestamp,source:'voice',action:e.action!,outcome:e.outcome!,scoreImpact:e.scoreImpact!,status:'CONFIRMED',needsReview:false,player:e.actorSide,segmentIndex:context.currentSet}));const aiMs=performance.now()-start;return {events,corrections:grammar.corrections,unknownFields:[],needsReview:false,confidence:0,model:'SCOUT_VOCABULARY_RULES',provider:'RULES (no AI request)',latencies:{speechMs:speechDurationMs,aiMs,totalMs:speechDurationMs+aiMs},rawTranscript:utterance};}
+ if(context.aiAvailable===false)return new FallbackLocalInterpreter().interpret(utterance,context,speechDurationMs,'AI not configured; check the extracted fields.');
  try{
  const response=await apiFetch('/api/interpret',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({utterance,sport:context.sport,context}),signal:AbortSignal.timeout(8000)});
  if(!response.ok){const failure=await response.json().catch(()=>({}));throw Error(failure.error||`AI unavailable (HTTP ${response.status})`);}

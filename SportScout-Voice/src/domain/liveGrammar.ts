@@ -1,3 +1,4 @@
+import {normalizeSpeechText} from './speechText';
 import {correctionPattern,outcomeFields,spatialFields} from './speechFields';
 import type {Vocabulary} from './scoutVocabulary';
 import {getVocabulary,vocabularyCategories,canonicalSide} from './scoutVocabulary';
@@ -8,12 +9,13 @@ const matcherCache=new Map<string,{aliases:Array<{word:string;action:string}>;lo
 const numberMap:Record<string,string>={'ศูนย์':'0','หนึ่ง':'1','สอง':'2','สาม':'3','สี่':'4','ห้า':'5','หก':'6','เจ็ด':'7','แปด':'8','เก้า':'9','สิบ':'10'};
 export interface GrammarResult {events:Partial<ScoutEvent>[];needsReview:boolean;corrections:string[];unrecognized:string}
 export function extractLiveSequence(raw:string,sport:SportType,nameA='',nameB='',inherited?:{side:Side;action:string},vocabulary:Vocabulary=getVocabulary(sport)):GrammarResult{
+ nameA=normalizeSpeechText(nameA);nameB=normalizeSpeechText(nameB);
  const thaiNumber=(value:string)=>{if(value.includes('สิบ')){const [tens,ones]=value.split('สิบ');const t=tens==='ยี่'?2:tens?Number(numberMap[tens]):1;const u=ones?Number(numberMap[ones]):0;return Number.isFinite(t)&&Number.isFinite(u)?String(t*10+u):value;}const digits=value.match(/ศูนย์|หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า/g);return digits?.join('')===value?digits.map(w=>numberMap[w]).join(''):value;};
- let text=raw.replace(/(เบอร์|หมายเลข|โซน|คุณภาพ|เกรด|รับ)\s*((?:ศูนย์|หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ|ยี่)+)/g,(_,prefix,value)=>prefix+' '+thaiNumber(value)).replace(/([0-9])\s*แต้ม/g,'$1 แต้ม');
+ let text=normalizeSpeechText(raw).replace(/(เบอร์|หมายเลข|โซน|คุณภาพ|เกรด|รับ)\s*((?:ศูนย์|หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ|ยี่)+)/g,(_,prefix,value)=>prefix+' '+thaiNumber(value)).replace(/([0-9])\s*แต้ม/g,'$1 แต้ม');
  const corrections=[...text.matchAll(/เอ้ย|เอ๊ย|ไม่ใช่|แก้เป็น|เปลี่ยนเป็น|ขอแก้|หมายถึง/g)].map(m=>m[0]);
  const cacheKey=JSON.stringify(vocabulary);
  let compiled=matcherCache.get(cacheKey);
- if(!compiled){const aliases=Object.entries(vocabulary).flatMap(([action,words])=>[action,...words].map(word=>({word,action}))).sort((a,b)=>b.word.length-a.word.length);compiled={aliases,lookup:new Map(aliases.map(a=>[a.word.toLowerCase(),a.action])),pattern:new RegExp(aliases.map(a=>esc(a.word)).join('|')||'(?!)','gi')};if(matcherCache.size>=8)matcherCache.delete(matcherCache.keys().next().value!);matcherCache.set(cacheKey,compiled);}
+ if(!compiled){const aliases=Object.entries(vocabulary).flatMap(([action,words])=>[action,...words].map(word=>({word:normalizeSpeechText(word),action}))).sort((a,b)=>b.word.length-a.word.length);compiled={aliases,lookup:new Map(aliases.map(a=>[a.word.toLowerCase(),a.action])),pattern:new RegExp(aliases.map(a=>esc(a.word)).join('|')||'(?!)','gi')};if(matcherCache.size>=8)matcherCache.delete(matcherCache.keys().next().value!);matcherCache.set(cacheKey,compiled);}
  const {aliases,lookup,pattern}=compiled;
  // Roles and embedded English words must not become contacts.
  const roleSpans=vocabularyCategories.identity.roles.flatMap(role=>[...text.matchAll(new RegExp(esc(role),'gi'))].map(m=>({start:m.index!,end:m.index!+m[0].length})));
@@ -25,7 +27,7 @@ export function extractLiveSequence(raw:string,sport:SportType,nameA='',nameB=''
  if(previous&&/เอ้ย|เอ๊ย|ไม่ใช่|แก้เป็น|เปลี่ยนเป็น/.test(gap)&&!/ทีม|ฝั่ง|เบอร์|แล้ว|จากนั้น|[AB]/i.test(gap)){contacts[contacts.length-1]=hit;continue;}
  contacts.push(hit);
  }
- const actorRx=/(?:ทีม\s*|ฝั่ง\s*|team\s*)?(เอ|บี|[AB])(?=\s|$|เบอร์|หมายเลข|#|ตบ|หยอด|เสิร์ฟ|รับ|ยก|เซ็ต|เซต|บล็อก|ขุด|เคลียร์|ดาด|ไดรฟ์)/gi;
+ const actorRx=new RegExp('(?:ทีม\\s*|ฝั่ง\\s*|team\\s*)?(เอ|บี|[AB])(?=\\s|$|เบอร์|หมายเลข|#|จาก|ตำแหน่ง|อยู่|ยืน|ที่|เอ้ย|เอ๊ย|ไม่ใช่|'+aliases.map(a=>esc(a.word)).join('|')+')','gi');
  let side:Side|undefined;let jersey:string|undefined;const events:Partial<ScoutEvent>[]=[];let dangling=false;let conflictingOutcome=false;
  let covered=text;
  const erase=(value:string)=>{covered=covered.replace(value,' '.repeat(value.length));};
@@ -77,10 +79,10 @@ export function extractLiveSequence(raw:string,sport:SportType,nameA='',nameB=''
  for(const w of [...vocabularyCategories.correction,...vocabularyCategories.hesitation,...vocabularyCategories.sequence,...vocabularyCategories.subtypes[sport],...vocabularyCategories.identity.roles,'from','error','out','in play','เล่นต่อ','บล็อกแต้ม','บล็อคแต้ม',...Object.values(vocabularyCategories.outcome).flat(),...Object.values(vocabularyCategories.reception).flat(),...vocabularyCategories.spatial.origin,...vocabularyCategories.spatial.target,'คุณภาพ','เกรด','กลับ','สำเร็จ','ยังเล่นต่อ','บอล','ลูก','เร็ว','หนัก','สั้น','ยาว','ได้','ไป','ลง'].sort((a,b)=>b.length-a.length))covered=covered.replace(new RegExp(esc(w),'gi'),' ');
  if(nameA)covered=covered.replaceAll(nameA,' ');if(nameB)covered=covered.replaceAll(nameB,' ');
  covered=covered.replace(/[\s,.!?ๆ]/g,'');
- const badSpatial=sport==='volleyball'&&Object.values(vocabularyCategories.spatial.badminton).flat().some(w=>raw.includes(w));
+ const badSpatial=sport==='volleyball'&&Object.values(vocabularyCategories.spatial.badminton).flat().some(w=>text.includes(w));
  const multiplePoints=events.filter(e=>e.scoreImpact?.points===1).length>1;
  // Contradictions and unsupported numeric evidence never receive automatic confirmation.
- const contradict=/ไม่แน่ใจ|น่าจะ|อาจจะ|หรือ|ไม่รู้|รับไม่ทัน/.test(raw)||/ไม่ได้แต้ม|ยังไม่ได้แต้ม|ไม่เอาแต้ม/.test(raw)&&!correctionPattern.test(raw);
+ const contradict=/ไม่แน่ใจ|น่าจะ|อาจจะ|หรือ|ไม่รู้|รับไม่ทัน/.test(text)||/ไม่ได้แต้ม|ยังไม่ได้แต้ม|ไม่เอาแต้ม/.test(text)&&!correctionPattern.test(text);
 
  const needsReview=!events.length||!!covered||badSpatial||contradict||dangling||conflictingOutcome||multiplePoints||events.some(e=>validationErrors(e).length>0);
  return {events:events.map(e=>({...e,status:needsReview?'REVIEW_REQUIRED':'CONFIRMED'})),needsReview,corrections,unrecognized:covered};
@@ -89,6 +91,7 @@ export function extractLiveSequence(raw:string,sport:SportType,nameA='',nameB=''
 // A correction uttered just after a provider endpoint edits the existing contact.
 // It is never another contact/point. Ambiguous field selection returns null for review.
 export function extractLiveCorrection(raw:string,previous:ScoutEvent):ScoutEvent|null{
+ const original=raw;raw=normalizeSpeechText(raw);
  if(!/^(?:\s|,)*(?:เอ้ย|เอ๊ย|ไม่ใช่|ขอแก้|แก้เป็น|เปลี่ยนเป็น|หมายถึง)/.test(raw))return null;
  let rest=raw;const patch:Partial<ScoutEvent>={};let changed=false;
  for(const w of vocabularyCategories.correction.slice().sort((a,b)=>b.length-a.length))rest=rest.replaceAll(w,' ');
@@ -105,7 +108,7 @@ export function extractLiveCorrection(raw:string,previous:ScoutEvent):ScoutEvent
  if(zone){const target=/ไป|ลง|เป้าหมาย/.test(rest),origin=/จาก|ตำแหน่ง|อยู่|ยืน/.test(rest);const field=target?'targetZone':origin?'originZone':previous.originZone&&!previous.targetZone?'originZone':previous.targetZone&&!previous.originZone?'targetZone':undefined;if(!field)return null;patch[field]=zone.zone;rest=rest.replace(zone.word,' ');changed=true;}
  for(const w of [...vocabularyCategories.spatial.origin,...vocabularyCategories.spatial.target,...vocabularyCategories.hesitation])rest=rest.replaceAll(w,' ');
  if(!changed||rest.replace(/[\s,.!ๆ]/g,''))return null;
- const updated={...previous,...patch,rawTranscript:`${previous.rawTranscript||''} → ${raw}`};
+ const updated={...previous,...patch,rawTranscript:`${previous.rawTranscript||''} → ${original}`};
  const scoring=updated.outcome!=='IN_PLAY';updated.scoreImpact={points:scoring?1:0,sideAwarded:scoring&&updated.actorSide?(['ERROR','BLOCKED'].includes(updated.outcome)?updated.actorSide==='A'?'B':'A':updated.actorSide):undefined};
  return validationErrors(updated).length?null:updated;
 }
