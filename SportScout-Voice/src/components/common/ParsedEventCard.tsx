@@ -17,6 +17,7 @@ export const ParsedEventCard: React.FC<ParsedEventCardProps> = ({
   const {t}=useLocale();
 
   const isInterpreting = state === 'transcribing' || state === 'understanding';
+  const isPreview=event?.status==='DRAFT';
   const isConfirmed = event?.status === 'CONFIRMED';
 
   // Do not invent origin or target if unknown
@@ -24,7 +25,7 @@ export const ParsedEventCard: React.FC<ParsedEventCardProps> = ({
   const action = event?.action || null;
   const origin = event?.originZone || null;
   const target = event?.targetZone || null;
-  const pointDelta = event?.pointDelta !== undefined ? event.pointDelta : 0;
+  const pointDelta = event?.pointDelta !== undefined ? event.pointDelta : event?.scoreImpact?.points || 0;
   const outcome = event?.outcome || event?.result || null;
   const jerseyNumber = event?.actorPlayer?.jerseyNumber || (event as any)?.jerseyNumber;
 
@@ -45,11 +46,12 @@ export const ParsedEventCard: React.FC<ParsedEventCardProps> = ({
               <Check className="w-3 h-3" />
               {t("CONFIRMED")}</span>
           ) : (
-            <span className="text-[10px] font-mono text-[#697281]">{event?.status || 'DRAFT'}</span>
+            <span className="text-[10px] font-mono text-[#697281]">{t(event?.status==='REVIEW_REQUIRED'?'Needs review':event?.status || 'DRAFT')}</span>
           )}
         </div>
       </div>
 
+      {isPreview&&<p className="mb-2 text-xs text-sky-200">{t('Waiting for final speech · score unchanged')}</p>}
       {/* Chips Container */}
       <div className="flex flex-wrap items-center gap-1.5 min-h-[38px]">
         {hasData ? (
@@ -58,7 +60,7 @@ export const ParsedEventCard: React.FC<ParsedEventCardProps> = ({
             {player && (
               <button
                 onClick={() => onEditChip && onEditChip('player')}
-                disabled={isInterpreting}
+                disabled={isInterpreting||isPreview}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
                   player === 'A'
                     ? 'bg-[#14233c] border-[#3B82F6]/60 text-[#3B82F6]'
@@ -74,7 +76,7 @@ export const ParsedEventCard: React.FC<ParsedEventCardProps> = ({
             {action && (
               <button
                 onClick={() => onEditChip && onEditChip('action')}
-                disabled={isInterpreting}
+                disabled={isInterpreting||isPreview}
                 className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#1B1F26] border border-[#252A33] text-[#F4F6F8] hover:border-[#333A47] transition-colors"
                 title={t("Sport Action")}
               >
@@ -86,7 +88,7 @@ export const ParsedEventCard: React.FC<ParsedEventCardProps> = ({
             {origin && (
               <button
                 onClick={() => onEditChip && onEditChip('origin')}
-                disabled={isInterpreting}
+                disabled={isInterpreting||isPreview}
                 className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-[#15181D] border border-[#252A33] text-[#A2AAB7] hover:border-[#333A47] transition-colors"
                 title={t("Origin Zone")}
               >
@@ -99,7 +101,7 @@ export const ParsedEventCard: React.FC<ParsedEventCardProps> = ({
             {target && (
               <button
                 onClick={() => onEditChip && onEditChip('target')}
-                disabled={isInterpreting}
+                disabled={isInterpreting||isPreview}
                 className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-[#15181D] border border-[#252A33] text-[#A2AAB7] hover:border-[#333A47] transition-colors"
                 title={t("Target Zone")}
               >
@@ -112,7 +114,7 @@ export const ParsedEventCard: React.FC<ParsedEventCardProps> = ({
             {outcome && (
               <button
                 onClick={() => onEditChip && onEditChip('point')}
-                disabled={isInterpreting}
+                disabled={isInterpreting||isPreview}
                 className={`px-3 py-1.5 rounded-lg text-xs font-extrabold border transition-colors ${
                   outcome === 'ERROR' || outcome === 'error'
                     ? 'bg-[#351618] border-[#EF5B64]/60 text-[#EF5B64]'
@@ -132,6 +134,7 @@ export const ParsedEventCard: React.FC<ParsedEventCardProps> = ({
             {t("No active event parsed yet. Hold button to scout.")}</div>
         )}
       </div>
+      {event?.status==='REVIEW_REQUIRED'&&onEditChip&&<button onClick={()=>onEditChip('point')} className="mt-2 rounded-lg border border-amber-400/40 px-3 py-2 text-xs text-amber-200">{t('Review and confirm event')}</button>}
     </div>
   );
 };

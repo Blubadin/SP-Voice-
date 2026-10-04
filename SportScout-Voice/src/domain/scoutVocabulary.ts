@@ -1,3 +1,4 @@
+import {normalizeSpeechText} from './speechText.js';
 import {INITIAL_SKILLS} from '../sports/skillData.js';
 import type {SkillItem} from '../types/scout.js';
 import {actions} from './validation.js';
@@ -24,7 +25,7 @@ export function vocabularyPrompt(sport:SportType,vocabulary=getVocabulary(sport)
 export type Vocabulary=Record<string,string[]>;
 const extras:Record<SportType,Vocabulary>={
  badminton:{Serve:['service','serves','เสริฟ','เสริ์ฟ'],Return:['return of serve','receive serve'],Smash:['smashes','ฟาด','ฟาดลูก','จัมพ์สแมช','jump smash'],Drop:['drop shot','drops','ลูกหยอด','ตีหยอด'],Clear:['clears','lob','โยนหลัง'],Drive:['drives'],Lift:['lifts','ยกหลัง'],Block:['blocks','ดักหน้าเน็ต'],'Net Shot':['netshot','ปั่นเน็ต','เล่นเน็ต'],'Net Kill':['netkill','เคาะหน้าเน็ต']},
- volleyball:{Serve:['service','serves','jump serve','jump float serve'],Reception:['receive','receive serve','pass','รีเซฟชัน','รีเซฟชันบอลแรก'],Set:['sets','setting','เซ็ทบอล','ยกบอล'],Attack:['spike','spikes','spiking','smash','quick attack','pipe attack','roll shot','ตีหัวเสา','โจมตี'],Block:['blocks','kill block','คิลบล็อก','บล็อคแต้ม'],Dig:['digs','ดีก'],Cover:['โคฟเวอร์','คัฟเวอร์บอล'],'Free Ball':['freeball'],Overpass:['over pass'],Error:['fault','เสียเอง']}
+ volleyball:{Serve:['service','serves','jump serve','jump float serve'],Reception:['receive','receive serve','pass','รีเซฟชัน','รีเซฟชันบอลแรก'],Set:['sets','setting','เซ็ทบอล','ยกบอล'],Attack:['spike','spikes','spiking','smash','quick attack','quick spike','ตีเร็ว','pipe attack','roll shot','ตีหัวเสา','โจมตี'],Block:['blocks','kill block','คิลบล็อก','บล็อคแต้ม'],Dig:['digs','ดีก'],Cover:['โคฟเวอร์','คัฟเวอร์บอล'],'Free Ball':['freeball'],Overpass:['over pass'],Error:['fault','เสียเอง']}
 };
 export function getVocabulary(sport:SportType,skills:SkillItem[]=INITIAL_SKILLS):Vocabulary {
  const vocabulary:Vocabulary={};
@@ -38,8 +39,8 @@ export function getVocabulary(sport:SportType,skills:SkillItem[]=INITIAL_SKILLS)
  return vocabulary;
 }
 export function aliasConflict(sport:SportType,action:string,alias:string,skills:SkillItem[]) {
- const normalized=alias.trim().toLowerCase();
- return Object.entries(getVocabulary(sport,skills)).find(([other,words])=>other!==action&&[other,...words].some(w=>w.toLowerCase()===normalized))?.[0];
+ const normalized=normalizeSpeechText(alias).toLowerCase();
+ return Object.entries(getVocabulary(sport,skills)).find(([other,words])=>other!==action&&[other,...words].some(w=>normalizeSpeechText(w).toLowerCase()===normalized))?.[0];
 }
 export function speechKeyterms(sport:SportType,names:string[]=[],skills?:SkillItem[]) {
  return [...new Set([...names.filter(n=>n&&!/^(Player|Team|Side) [AB]$/.test(n)),...Object.values(getVocabulary(sport,skills)).map(v=>v[0]),'ทีมเอ','ทีมบี','ได้แต้ม','เสียแต้ม','เบอร์','โซน'])].slice(0,24);

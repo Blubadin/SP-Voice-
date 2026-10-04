@@ -563,5 +563,10 @@
   "Known aliases are interpreted locally. Complex or uncertain phrases can use AI and may require review.": "คำที่รู้จักแยกด้วยกฎในเครื่อง คำที่ซับซ้อนหรือไม่แน่ใจใช้ AI ช่วยและอาจต้องตรวจทาน",
   "Local vocabulary rules ready": "พจนานุกรมและกฎพร้อมใช้งาน",
   "Text interpretation": "เวลาแยกข้อความ",
-  "Text Test Lab & Benchmark Harness": "ทดสอบข้อความและประสิทธิภาพ"
+  "Text Test Lab & Benchmark Harness": "ทดสอบข้อความและประสิทธิภาพ",
+  "Interpret latest transcript": "แยกข้อความล่าสุด",
+  "Edit transcript text": "แก้ข้อความถอดเสียง",
+  "Waiting for final speech · score unchanged": "รอข้อความสุดท้าย · ยังไม่เพิ่มคะแนน",
+  "Review and confirm event": "ตรวจและยืนยันเหตุการณ์",
+  "Needs review": "ต้องตรวจทาน"
 }

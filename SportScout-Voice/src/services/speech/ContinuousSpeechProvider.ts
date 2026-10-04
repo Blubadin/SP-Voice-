@@ -1,12 +1,13 @@
+import {BrowserTranscriptAssembler} from '../../domain/browserTranscript';
 import {apiFetch} from '../apiClient';
 import {speechKeyterms} from '../../domain/scoutVocabulary';
 import {StreamTranscriptAssembler} from '../../domain/streamTranscript';
 import type {SportType} from '../../domain/types';
-export interface SpeechEvidence {utteranceId:string;provider:string;receivedAt:number;audioEndAt?:number;gap?:boolean;words?:Array<{word:string;start?:number;end?:number;confidence?:number}>}
+export interface SpeechEvidence {utteranceId:string;provider:string;receivedAt:number;audioEndAt?:number;gap?:boolean;provisional?:boolean;confidence?:number;words?:Array<{word:string;start?:number;end?:number;confidence?:number}>}
 export interface ContinuousCallbacks {onTranscript:(id:string,text:string,final:boolean,evidence?:SpeechEvidence)=>void;onLevel:(level:number)=>void;onStatus:(status:'connecting'|'listening'|'reconnecting'|'stopped')=>void;onError:(message:string)=>void;}
 export class ContinuousSpeechProvider {
  private stream:MediaStream|null=null;private context:AudioContext|null=null;private node:AudioWorkletNode|null=null;private socket:WebSocket|null=null;private recognition:any=null;
- private assembler=new StreamTranscriptAssembler();private active=false;private epoch=0;private heartbeat:ReturnType<typeof setInterval>|null=null;private retry:ReturnType<typeof setTimeout>|null=null;private retries=0;private browserId=crypto.randomUUID();private browserFinal='';private browserInterim='';private buffer:ArrayBuffer[]=[];
+ private assembler=new StreamTranscriptAssembler();private active=false;private epoch=0;private heartbeat:ReturnType<typeof setInterval>|null=null;private retry:ReturnType<typeof setTimeout>|null=null;private retries=0;private browserAssembler=new BrowserTranscriptAssembler();private browserTimer:ReturnType<typeof setTimeout>|null=null;private browserEndTimer:ReturnType<typeof setTimeout>|null=null;private buffer:ArrayBuffer[]=[];
  private stopPromise:Promise<void>|null=null;
  private startedAt=0;private gap=false;private finalizeResolver:(()=>void)|null=null;private flushResolver:(()=>void)|null=null;
  private callbacks:ContinuousCallbacks|null=null;private options:{language:'th'|'en';sport:SportType;deviceId?:string;provider:'deepgram'|'browser';keyterms?:string[]}|null=null;
@@ -44,23 +45,54 @@ export class ContinuousSpeechProvider {
  }
  private startBrowser(epoch:number){
  const Rec=(window as any).SpeechRecognition||(window as any).webkitSpeechRecognition;if(!Rec)throw Error('เบราว์เซอร์ไม่รองรับ กรุณาตั้งค่า Deepgram / Configure Deepgram for live transcription');
- const recognition=new Rec();this.recognition=recognition;recognition.lang=this.options!.language==='th'?'th-TH':'en-US';recognition.continuous=true;recognition.interimResults=true;this.browserFinal='';this.browserInterim='';this.browserId=crypto.randomUUID();
- recognition.onresult=(e:any)=>{if(epoch!==this.epoch)return;let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript;if(e.results[i].isFinal)this.browserFinal+=' '+t;else interim+=t;}this.browserInterim=interim;this.callbacks?.onTranscript(this.browserId,(this.browserFinal+' '+interim).trim(),false);if(this.retry)clearTimeout(this.retry);if(this.browserFinal.trim())this.retry=setTimeout(()=>this.flushBrowser(),400);};
- recognition.onerror=(e:any)=>{if(['not-allowed','service-not-allowed','audio-capture','network'].includes(e.error)){this.callbacks?.onError(`Browser speech ${e.error}`);void this.stop();}};
- recognition.onend=()=>{if(epoch!==this.epoch||!this.active)return;this.flushBrowser();this.retry=setTimeout(()=>{if(epoch===this.epoch&&this.active){try{recognition.start();}catch{this.callbacks?.onError('ระบบถอดเสียงเบราว์เซอร์หยุด / Browser recognition stopped');void this.stop();}}},300);};
+ const recognition=new Rec();this.recognition=recognition;this.browserAssembler=new BrowserTranscriptAssembler();recognition.lang=this.options!.language==='th'?'th-TH':'en-US';recognition.continuous=true;recognition.interimResults=true;let signature='';
+ recognition.onresult=(e:any)=>{
+   if(epoch!==this.epoch||recognition!==this.recognition)return;
+   const update=this.browserAssembler.accept(e);
+   if(!update){if(this.browserTimer)clearTimeout(this.browserTimer);return;}
+   const nextSignature=JSON.stringify([update.text,update.provisional]);if(signature===nextSignature)return;signature=nextSignature;
+   if(this.browserTimer)clearTimeout(this.browserTimer);
+   this.callbacks?.onTranscript(update.id,update.text,false);
+   // Some mobile browsers never finalize until stop(). Request an endpoint after
+   // a stable hypothesis, keeping any unfinished text as review-only evidence.
+   this.browserTimer=setTimeout(()=>{if(update.provisional)this.endBrowserRecognition(epoch,recognition);else this.flushBrowser();},update.provisional?1500:400);
+ };
+ recognition.onerror=(e:any)=>{if(epoch!==this.epoch||recognition!==this.recognition)return;if(['not-allowed','service-not-allowed','audio-capture','network'].includes(e.error)){this.callbacks?.onError(`Browser speech ${e.error}`);void this.stop();}};
+ recognition.onend=()=>this.finishBrowserRecognition(epoch,recognition);
  recognition.start();this.callbacks?.onStatus('listening');
  }
- private flushBrowser(){if(!this.browserFinal.trim())return;this.callbacks?.onTranscript(this.browserId,this.browserFinal.trim(),true,{utteranceId:this.browserId,provider:'browser',receivedAt:Date.now()});this.browserFinal='';this.browserId=crypto.randomUUID();}
+ private endBrowserRecognition(epoch:number,recognition:any){
+   if(recognition!==this.recognition||this.browserEndTimer)return;
+   // Stop may return a final hypothesis asynchronously. Bound the wait if the
+   // service fails to send onend, then restart with a fresh indexed result list.
+   this.browserEndTimer=setTimeout(()=>this.finishBrowserRecognition(epoch,recognition),800);
+   try{recognition.stop();}catch{this.finishBrowserRecognition(epoch,recognition);}
+ }
+ private finishBrowserRecognition(epoch:number,recognition:any){
+   if(epoch!==this.epoch||recognition!==this.recognition)return;
+   if(this.browserTimer)clearTimeout(this.browserTimer);if(this.browserEndTimer)clearTimeout(this.browserEndTimer);this.browserTimer=null;this.browserEndTimer=null;
+   this.flushBrowser(true);recognition.onresult=null;recognition.onend=null;recognition.onerror=null;this.recognition=null;try{recognition.abort();}catch{}
+   if(this.active)this.retry=setTimeout(()=>{if(epoch===this.epoch&&this.active){try{this.startBrowser(epoch);}catch{this.callbacks?.onError('ระบบถอดเสียงเบราว์เซอร์หยุด / Browser recognition stopped');void this.stop();}}},300);
+ }
+ private flushBrowser(includeInterim=false){
+   const update=this.browserAssembler.flush(includeInterim);if(!update)return;
+   this.callbacks?.onTranscript(update.id,update.text,true,{utteranceId:update.id,provider:'browser',receivedAt:Date.now(),provisional:update.provisional,confidence:update.confidence});
+ }
+ finalizePendingTranscript():boolean {
+   if(this.options?.provider!=='browser'||!this.recognition||!this.browserAssembler.pending())return false;
+   this.endBrowserRecognition(this.epoch,this.recognition);return true;
+ }
  stop():Promise<void>{if(this.stopPromise)return this.stopPromise;if(!this.active)return Promise.resolve();this.stopPromise=this.drainAndStop().finally(()=>{this.stopPromise=null;});return this.stopPromise;}
  private async drainAndStop(){
+    if(this.browserTimer)clearTimeout(this.browserTimer);if(this.browserEndTimer)clearTimeout(this.browserEndTimer);this.browserTimer=null;this.browserEndTimer=null;
     if(this.retry)clearTimeout(this.retry);if(this.heartbeat)clearInterval(this.heartbeat);this.retry=null;this.heartbeat=null;
     // Drain the last PCM samples before asking the service to finalize.
     if(this.node){await new Promise<void>(resolve=>{const timer=setTimeout(resolve,100);this.flushResolver=()=>{clearTimeout(timer);resolve();};this.node!.port.postMessage?.({type:'flush'});});this.flushResolver=null;}
     this.active=false;
     if(this.socket?.readyState===WebSocket.OPEN){await new Promise<void>(resolve=>{const timer=setTimeout(()=>{this.gap=true;resolve();},2000);this.finalizeResolver=()=>{clearTimeout(timer);resolve();};this.socket!.send(JSON.stringify({type:'Finalize'}));});this.finalizeResolver=null;if(this.socket?.readyState===WebSocket.OPEN)this.socket.send(JSON.stringify({type:'CloseStream'}));}
     if(this.recognition){await new Promise<void>(resolve=>{const timer=setTimeout(resolve,800);this.recognition.onend=()=>{clearTimeout(timer);resolve();};try{this.recognition.stop();}catch{clearTimeout(timer);resolve();}});}
-    this.emit(this.assembler.flush());this.flushBrowser();++this.epoch;this.socket?.close();this.socket=null;
+    this.emit(this.assembler.flush());this.flushBrowser(true);++this.epoch;this.socket?.close();this.socket=null;
     if(this.recognition){this.recognition.onend=null;this.recognition.onresult=null;try{this.recognition.abort();}catch{}this.recognition=null;}
-    this.node?.disconnect();this.node=null;this.stream?.getTracks().forEach(t=>t.stop());this.stream=null;if(this.context&&this.context.state!=='closed')await this.context.close().catch(()=>{});this.context=null;this.buffer=[];if(this.retry)clearTimeout(this.retry);this.retry=null;this.callbacks?.onLevel(0);this.callbacks?.onStatus('stopped');
+    this.node?.disconnect();this.node=null;this.stream?.getTracks().forEach(t=>t.stop());this.stream=null;if(this.context&&this.context.state!=='closed')await this.context.close().catch(()=>{});this.context=null;this.buffer=[];if(this.browserTimer)clearTimeout(this.browserTimer);this.browserTimer=null;if(this.retry)clearTimeout(this.retry);this.retry=null;this.callbacks?.onLevel(0);this.callbacks?.onStatus('stopped');
  }
 }

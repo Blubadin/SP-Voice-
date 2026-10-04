@@ -20,7 +20,7 @@ export const ScoutScreen: React.FC = () => {
     currentSession,
     scoreState,
     apiStatus,
-    processUtterance,
+    processUtterance,finalizePendingTranscript,
     voiceState,
     currentTranscript,
     currentParsedEvent,
@@ -54,7 +54,8 @@ export const ScoutScreen: React.FC = () => {
       {hasPendingAudio&&<section className="rounded-xl border border-amber-500/40 p-3 mb-3 text-sm space-y-2"><p>{t('Recording retained. Retry or download before recording again. Refreshing this page clears the recording.')}</p><div className="flex flex-wrap gap-2"><button disabled={voiceState==='transcribing'||voiceState==='understanding'} onClick={retryTranscription} className="rounded-lg bg-sky-700 px-3 py-2 disabled:opacity-40">{t('Retry transcription')}</button><button onClick={downloadPendingAudio} className="rounded-lg border border-white/20 px-3 py-2">{t('Download recording')}</button></div></section>}
       <div className="text-sm text-sky-200 mb-2">{settings.captureMode==='continuous'?t(apiStatus.hasDeepgramKey&&settings.transcriptionMode!=='browser'?'Deepgram live transcription · vocabulary rules + AI for ambiguity':'Continuous browser recognition · experimental; configure Deepgram for live streaming'):apiStatus.hasApiKey?t(settings.transcriptionMode==='server'?'Gemini configured · audio is transcribed after release':'Automatic mode: browser final transcript first; Gemini backup'):t('Browser transcription · vocabulary rules available; complex events require review')}</div>
       {settings.captureMode==='continuous'&&<section className="mb-3 rounded-xl border border-sky-500/30 bg-sky-500/5 p-3 text-sm" aria-live="polite"><p className="text-gray-400">{t('Live tags · provisional until speech is finalized')}</p><div className="flex flex-wrap gap-2 mt-2">{liveTags.map((tag,i)=><span key={i} className="rounded-full border border-sky-400/30 px-3 py-1 text-sky-200">{t(tag)}</span>)}</div>{queuedSequences>0&&<p className="mt-2 text-amber-200">{t('Sequences processing')}: {queuedSequences} · {t('Microphone keeps listening')}</p>}</section>}
-      <form className="flex gap-2 mb-3" onSubmit={e=>{e.preventDefault();if(typed.trim()){processUtterance(typed,0);setTyped('');}}}><input aria-label={t("Spoken scouting text")} placeholder={t("พิมพ์คำบรรยายเพื่อบันทึก / Enter scouting observation")} value={typed} onChange={e=>setTyped(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-white/15 bg-[#151c27] p-2 text-sm"/><button className="rounded-lg bg-sky-700 px-3 text-sm" type="submit">{t("Interpret")}</button></form>
+      <form className="flex gap-2 mb-3" onSubmit={e=>{e.preventDefault();if(typed.trim()){processUtterance(typed,0);setTyped('');}else{finalizePendingTranscript();}}}><input aria-label={t("Spoken scouting text")} placeholder={t("พิมพ์คำบรรยายเพื่อบันทึก / Enter scouting observation")} value={typed} onChange={e=>setTyped(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-white/15 bg-[#151c27] p-2 text-sm"/><button className="rounded-lg bg-sky-700 px-3 text-sm" disabled={!typed.trim()&&!isRealMicActive} type="submit">{t(typed.trim()?"Interpret":"Interpret latest transcript")}</button></form>
+      {currentTranscript&&!isRealMicActive&&queuedSequences===0&&<button onClick={()=>currentParsedEvent&&currentParsedEvent.status!=='DRAFT'?setEditingEvent(currentParsedEvent):setTyped(currentTranscript)} className="mb-3 rounded-lg border border-white/20 px-3 py-2 text-xs">{t('Edit transcript text')}</button>}
       {/* 
         ========================================================================
         PHONE LIVE SCOUT: STRICT SINGLE-VIEWPORT (ZERO SCROLLING)
