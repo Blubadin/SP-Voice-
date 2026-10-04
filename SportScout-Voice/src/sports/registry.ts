@@ -1,3 +1,4 @@
+import {replayScore} from '../domain/scoreReplay';
 import { SportDefinition, SportType } from '../domain/types';
 import { BadmintonDefinition } from './badminton';
 import { VolleyballDefinition } from './volleyball';
@@ -7,12 +8,12 @@ const SPORT_REGISTRY: Record<SportType, SportDefinition> = {
   volleyball: VolleyballDefinition,
 };
 
-export function getSportDefinition(sport: SportType): SportDefinition {
+export function getSportDefinition(sport: SportType,format?:string): SportDefinition {
   const def = SPORT_REGISTRY[sport];
   if (!def) {
     return BadmintonDefinition;
   }
-  return def;
+  return format?{...def,calculateScore:events=>replayScore(events,sport,format).state}:def;
 }
 
 export function getAllSportDefinitions(): SportDefinition[] {

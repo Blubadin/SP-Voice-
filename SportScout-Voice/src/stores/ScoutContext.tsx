@@ -1,3 +1,9 @@
+import {apiFetch} from '../services/apiClient';
+import type {SpeechEvidence} from '../services/speech/ContinuousSpeechProvider';
+import {speechNeedsReview} from '../services/speech/speechReview';
+import {getVocabulary,aliasConflict,speechKeyterms} from '../domain/scoutVocabulary';
+import {replayScore} from '../domain/scoreReplay';
+import {isOutcomeOnly,outcomeFields} from '../domain/speechFields';
 import {ContinuousSpeechProvider} from '../services/speech/ContinuousSpeechProvider';
 import {extractLiveSequence,extractLiveCorrection} from '../domain/liveGrammar';
 import {scoreReplayOrder} from '../domain/scoreOrder';
@@ -104,7 +110,7 @@ const continuousProvider=new ContinuousSpeechProvider();
 const interpreter = new GeminiServerInterpreter();
 
 export const ScoutProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [sessions, setSessions] = useState<MatchSession[]>(() => storageService.getSessions());
+  const [sessions, setSessionsState] = useState<MatchSession[]>(() => storageService.getSessions());
   const [activeSessionId, setActiveSessionId] = useState<string>(() => storageService.getActiveSessionId());
   const [settings, setSettings] = useState<AppSettings>(() => storageService.getSettings());
   const [skills, setSkills] = useState<SkillItem[]>(() => storageService.getSkills());
@@ -120,10 +126,14 @@ export const ScoutProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const streamQueue=useRef<Promise<void>>(Promise.resolve());
   const streamSeen=useRef(new Set<string>());
   const previewCues=useRef(new Set<string>());
-  const streamRally=useRef(crypto.randomUUID());
+  const streamRally=useRef<string>(crypto.randomUUID());
   const streamTeam=useRef<{side:'A'|'B';action:string}|undefined>(undefined);
-  const latestSessions=useRef(sessions);latestSessions.current=sessions;
-  const streamProcess=useRef<(text:string,id:string,rallyId:string,session:MatchSession,inheritedTeam?:{side:'A'|'B';action:string})=>Promise<void>>(async()=>{});
+  const captureSequence=useRef(0);
+  const latestSkills=useRef(skills);latestSkills.current=skills;
+  const latestSessions=useRef(sessions);
+  // Queued finals need the preceding commit even before React paints the next frame.
+  const setSessions:React.Dispatch<React.SetStateAction<MatchSession[]>>=(update)=>{const next=typeof update==='function'?update(latestSessions.current):update;latestSessions.current=next;setSessionsState(next);};
+  const streamProcess=useRef<(text:string,id:string,rallyId:string,session:MatchSession,inheritedTeam?:{side:'A'|'B';action:string},evidence?:SpeechEvidence)=>Promise<void>>(async()=>{});
   const transcriptionRetryRef=useRef(false);
   const [pendingAudio,setPendingAudio]=useState<{audio:Blob;durationMs:number;sessionId:string;language:'th'|'en'}|null>(null);
   const [voiceState, setVoiceState] = useState<VoiceState>('ready');
@@ -140,7 +150,7 @@ export const ScoutProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const [apiStatus,setApiStatus]=useState({hasDeepgramKey:false,hasApiKey:false,status:'checking',model:undefined as string|undefined});
   const listeningIntentRef=useRef(false);
-  const refreshApiStatus=async()=>{try{const response=await fetch('/api/health');if(!response.ok)throw Error('Service unavailable');const data=await response.json();setApiStatus({hasDeepgramKey:!!data.hasDeepgramKey,hasApiKey:!!data.hasApiKey,status:'available',model:data.model});}catch{setApiStatus({hasDeepgramKey:false,hasApiKey:false,status:'unavailable',model:undefined});}};
+  const refreshApiStatus=async()=>{try{const response=await apiFetch('/api/health');if(!response.ok)throw Error('Service unavailable');const data=await response.json();setApiStatus({hasDeepgramKey:!!data.hasDeepgramKey,hasApiKey:!!data.hasApiKey,status:'available',model:data.model});}catch{setApiStatus({hasDeepgramKey:false,hasApiKey:false,status:'unavailable',model:undefined});}};
   useEffect(()=>{void refreshApiStatus();return ()=>{void continuousProvider.stop();void speechProvider.stop().catch(()=>{});};},[]);
   const activeTimerRef = useRef<NodeJS.Timeout | null>(null);
   const listeningStartRef = useRef<number>(0);
@@ -148,17 +158,14 @@ export const ScoutProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Active session
   const currentSession = useMemo(() => {
     const session=sessions.find((s) => s.id === activeSessionId) || sessions[0];
-    const definition=getSportDefinition(session.sport);
-    const forward=scoreReplayOrder(session.events);
-    const replayed=forward.map((e,i)=>{const before=definition.calculateScore(forward.slice(0,i).reverse());const after=definition.calculateScore(forward.slice(0,i+1).reverse());return {...e,segmentIndex:before.currentSet,scoreAfterA:after.scoreA,scoreAfterB:after.scoreB,setsAfterA:after.setsA,setsAfterB:after.setsB};});
-    const score=definition.calculateScore(session.events);
-    return {...session,playerA:{...session.playerA,score:score.scoreA},playerB:{...session.playerB,score:score.scoreB},setsA:score.setsA,setsB:score.setsB,currentSet:score.currentSet,segments:score.segments,events:session.events.map(e=>replayed.find(snapshot=>snapshot.id===e.id)!)};
+    const replay=replayScore(session.events,session.sport,session.format);const score=replay.state;
+    return {...session,playerA:{...session.playerA,score:score.scoreA},playerB:{...session.playerB,score:score.scoreB},setsA:score.setsA,setsB:score.setsB,currentSet:score.currentSet,segments:score.segments,events:replay.events};
   }, [sessions, activeSessionId]);
 
   // Compute sport definition dynamically
   const sportDef = useMemo(() => {
-    return getSportDefinition(currentSession.sport);
-  }, [currentSession.sport]);
+    return getSportDefinition(currentSession.sport,currentSession.format);
+  }, [currentSession.sport,currentSession.format]);
 
   // Compute official score from confirmed events
   const scoreState = useMemo(() => {
@@ -175,35 +182,9 @@ export const ScoutProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return sportDef.aggregateHeatmap(currentSession.events, 'all');
   }, [sportDef, currentSession.events]);
 
-  // Keep session scores synced with score engine
-  useEffect(() => {
-    if (
-      currentSession.playerA.score !== scoreState.scoreA ||
-      currentSession.playerB.score !== scoreState.scoreB ||
-      currentSession.setsA !== scoreState.setsA ||
-      currentSession.setsB !== scoreState.setsB ||
-      currentSession.currentSet !== scoreState.currentSet
-    ) {
-      setSessions((prev) =>
-        prev.map((s) => {
-          if (s.id !== currentSession.id) return s;
-          return {
-            ...s,
-            playerA: { ...s.playerA, score: scoreState.scoreA },
-            playerB: { ...s.playerB, score: scoreState.scoreB },
-            setsA: scoreState.setsA,
-            setsB: scoreState.setsB,
-            currentSet: scoreState.currentSet,
-            segments: scoreState.segments,
-          };
-        })
-      );
-    }
-  }, [scoreState, currentSession.id]);
-
-  useEffect(() => {
-    storageService.saveSessions(sessions);
-  }, [sessions]);
+  const [storageReady,setStorageReady]=useState(false);
+  useEffect(()=>{let alive=true;void storageService.hydrateSessions().then(loaded=>{if(!alive)return;if(loaded.length)setSessions(loaded);setStorageReady(true);});return()=>{alive=false;};},[]);
+  useEffect(()=>{if(storageReady)void storageService.saveSessions(sessions).catch(()=>setMicError('บันทึกการแข่งขันไม่สำเร็จ กรุณาส่งออกข้อมูลก่อนปิดหน้านี้ / Saving failed; export before closing.'));},[sessions,storageReady]);
 
   useEffect(() => {
     storageService.setActiveSessionId(activeSessionId);
@@ -231,6 +212,8 @@ export const ScoutProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const addSkillAlias = (id: string, alias: string) => {
     if (!alias.trim()) return;
+    const skill=skills.find(sk=>sk.id===id);
+    if(skill){const conflict=aliasConflict(skill.sport,skill.name,alias,skills);if(conflict){setMicError(`คำนี้ใช้กับ ${conflict} อยู่แล้ว / Alias belongs to ${conflict}`);return;}}
     setSkills((prev) =>
       prev.map((sk) =>
         sk.id === id && !sk.aliases.includes(alias.trim())
@@ -260,25 +243,8 @@ export const ScoutProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       navigator.vibrate(50);
     }
 
-    const [removed, ...remaining] = currentSession.events;
-    const recomputedScore = sportDef.calculateScore(remaining);
-
-    setSessions((prev) =>
-      prev.map((s) => {
-        if (s.id !== currentSession.id) return s;
-        return {
-          ...s,
-          playerA: { ...s.playerA, score: recomputedScore.scoreA },
-          playerB: { ...s.playerB, score: recomputedScore.scoreB },
-          setsA: recomputedScore.setsA,
-          setsB: recomputedScore.setsB,
-          currentSet: recomputedScore.currentSet,
-          segments: recomputedScore.segments,
-          events: remaining,
-        };
-      })
-    );
-
+    const remaining=currentSession.events.slice(1);
+    setSessions(prev=>prev.map(s=>s.id===currentSession.id?{...s,events:s.events.slice(1)}:s));
     setCurrentParsedEvent(remaining[0] || null);
     if (remaining[0]) {
       setCurrentTranscript(remaining[0].rawTranscript || '');
@@ -290,29 +256,46 @@ export const ScoutProvider: React.FC<{ children: React.ReactNode }> = ({ childre
    * Feeds the utterance to Gemini (or fallback), validates against legal sport schema,
    * updates sessions, rallies, scores, heatmaps, and audio feedback.
    */
-  const processUtterance = async (text: string, durationMs = 0,forceReview=false,streamMeta?:{id:string;rallyId:string;session:MatchSession;inheritedTeam?:{side:'A'|'B';action:string}}) => {
-    const targetSession=streamMeta?.session||currentSession;
-    const targetDef=getSportDefinition(targetSession.sport);
-    if(streamMeta&&/^(?:\s|,)*(?:เอ้ย|เอ๊ย|ไม่ใช่|ขอแก้|แก้เป็น|เปลี่ยนเป็น|หมายถึง)/.test(text)){
+  const processUtterance = async (text: string, durationMs = 0,forceReview=false,streamMeta?:{id:string;rallyId:string;session:MatchSession;inheritedTeam?:{side:'A'|'B';action:string};evidence?:SpeechEvidence}) => {
+    const targetSession=latestSessions.current.find(s=>s.id===(streamMeta?.session.id||currentSession.id))||streamMeta?.session||currentSession;
+    const targetDef=getSportDefinition(targetSession.sport,targetSession.format);
+    if(streamMeta&&/(?:แรลลี่ใหม่|แต้มต่อไป|next rally)/i.test(text)){
+      const parts=text.split(/(?:แรลลี่ใหม่|แต้มต่อไป|next rally)/i).filter(p=>p.trim());
+      for(let i=0;i<parts.length;i++){if(i){streamRally.current=crypto.randomUUID();streamTeam.current=undefined;}await processUtterance(parts[i],durationMs,forceReview,{...streamMeta,id:`${streamMeta.id}:rally:${i}`});}return;
+    }
+    if(streamMeta&&!forceReview&&/^(?:\s|,)*(?:เอ้ย|เอ๊ย|ไม่ใช่|ขอแก้|แก้เป็น|เปลี่ยนเป็น|หมายถึง)/.test(text)){
       const previous=targetSession.events.find(e=>e.source==='voice'&&e.status==='CONFIRMED');
       const corrected=previous&&Date.now()-Date.parse(previous.timestamp)<8000?extractLiveCorrection(text,previous):null;
-      if(corrected){setSessions(prev=>prev.map(s=>s.id===targetSession.id?{...s,events:s.events.map(e=>e.id===corrected.id?{...e,...corrected}:e)}:s));setCurrentParsedEvent(corrected);if(settings.feedbackSound)playAudioFeedback('ding');return;}
+      if(corrected){setSessions(prev=>prev.map(s=>s.id===targetSession.id?{...s,events:s.events.map(e=>e.id===corrected.id?{...e,...corrected}:e)}:s));setCurrentParsedEvent(corrected);if(corrected.scoreImpact.points===0){streamRally.current=corrected.rallyId||crypto.randomUUID();streamTeam.current=corrected.actorSide?{side:corrected.actorSide,action:corrected.action}:undefined;}if(settings.feedbackSound)playAudioFeedback('ding');return;}
     }
 
     if (!text || !text.trim()) return;
+    if(streamMeta&&!forceReview&&isOutcomeOnly(text)) {
+      const pending=targetSession.events.find(e=>e.source==='voice'&&e.rallyId===streamRally.current&&e.status==='CONFIRMED');
+      if(pending&&pending.outcome==='IN_PLAY'&&Date.now()-Date.parse(pending.timestamp)<8000) {
+        const result=outcomeFields(text,pending.action,targetSession.sport);
+        const side=pending.actorSide;
+        const points=result.outcome==='IN_PLAY'?0:1;
+        const sideAwarded=points&&side?(['ERROR','BLOCKED'].includes(result.outcome)?side==='A'?'B':'A':side):undefined;
+        const updated={...pending,outcome:result.outcome,scoreImpact:{points,sideAwarded},rawTranscript:`${pending.rawTranscript} → ${text}`};
+        if(!result.conflict&&!validationErrors(updated).length){setSessions(prev=>prev.map(s=>s.id===targetSession.id?{...s,events:s.events.map(e=>e.id===pending.id?updated:e)}:s));setCurrentParsedEvent(updated);if(points){streamRally.current=crypto.randomUUID();streamTeam.current=undefined;}return;}
+      }
+    }
     if (activeTimerRef.current) clearTimeout(activeTimerRef.current);
 
     setVoiceState('understanding');
     setCurrentTranscript(text);
 
     const context: InterpretationContext = {
-      inheritedTeam:streamMeta?.inheritedTeam,
+      inheritedTeam:streamMeta?streamTeam.current:undefined,
+      skills:latestSkills.current,
+      pendingContact:targetSession.events.find(e=>e.rallyId===streamRally.current&&e.status==='CONFIRMED'),
       sport: targetSession.sport,
       playerAName: targetSession.playerA.name,
       playerBName: targetSession.playerB.name,
       scoreA: targetSession.playerA.score,
       scoreB: targetSession.playerB.score,
-      currentSet: targetSession.currentSet,
+      currentSet: targetDef.calculateScore(targetSession.events).currentSet,
       scoreState:targetDef.calculateScore(targetSession.events),
       recentEvents: targetSession.events.slice(0, 3).map((e) => ({
         action: e.action,
@@ -323,19 +306,20 @@ export const ScoutProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     try {
       const result = await interpreter.interpret(text, context, durationMs);
-      if(streamMeta){result.events=result.events.map((e,i)=>({...e,id:`${streamMeta.id}:${i}`,rallyId:streamMeta.rallyId}));}
+      if(streamMeta){const sequence=++captureSequence.current;result.events=result.events.map((e,i)=>({...e,id:`${streamMeta.id}:${i}`,rallyId:streamRally.current,captureSequence:sequence,speechEvidence:streamMeta.evidence}));}
 
       if(forceReview){result.needsReview=true;result.events=result.events.map(e=>({...e,status:'REVIEW_REQUIRED'}));}
       setDiagnostics(result);
 
       // 1. Control Intent: Undo Last
-      if (result.controlIntent === 'UNDO') {
-        undoLastEvent();
+      if (result.controlIntent === 'UNDO'&&!forceReview) {
+        setSessions(prev=>prev.map(s=>s.id===targetSession.id?{...s,events:s.events.slice(1)}:s));
+        streamRally.current=crypto.randomUUID();streamTeam.current=undefined;
         setVoiceState('ready');
         return;
       }
 
-      if (result.controlIntent === 'CANCEL') {setVoiceState('ready');return;}
+      if (result.controlIntent === 'CANCEL'&&!forceReview) {setVoiceState('ready');return;}
       // 2. Parse & Commit Valid Events
       if (result.events && result.events.length > 0) {
         const newEvents = result.events.map((e) => ({
@@ -343,7 +327,10 @@ export const ScoutProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           sessionId: targetSession.id,
         }));
 
-        setCurrentParsedEvent(newEvents[0]);
+        setCurrentParsedEvent(newEvents.at(-1)!);
+        if(streamMeta){const last=newEvents.at(-1);streamTeam.current=!result.needsReview&&last?.actorSide?{side:last.actorSide,action:last.action}:undefined;
+          if(newEvents.some(e=>e.scoreImpact.points===1&&!validationErrors(e).length)){streamRally.current=crypto.randomUUID();streamTeam.current=undefined;}
+        }
 
         if (result.needsReview) {
           // Flagged for Review
@@ -417,7 +404,7 @@ export const ScoutProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   /**
    * Start recording from physical microphone with live speech recognition & waveform levels
    */
-  streamProcess.current=(text,id,rallyId,session,inheritedTeam)=>processUtterance(text,0,false,{id,rallyId,session:latestSessions.current.find(s=>s.id===session.id)||session,inheritedTeam});
+  streamProcess.current=(text,id,rallyId,session,inheritedTeam,evidence)=>processUtterance(text,0,speechNeedsReview(evidence),{id,rallyId,session:latestSessions.current.find(s=>s.id===session.id)||session,inheritedTeam,evidence});
   const startListening = async () => {
     if(settings.feedbackSound)prepareAudioFeedback();
     if(settings.captureMode==='continuous'){
@@ -426,20 +413,18 @@ export const ScoutProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const provider=settings.transcriptionMode==='deepgram'||settings.transcriptionMode==='auto'&&apiStatus.hasDeepgramKey?'deepgram':'browser';
       if(settings.transcriptionMode==='server'){setMicError('Gemini แบบไฟล์ใช้กับโหมดทีละคำพูด เลือก Deepgram หรือเบราว์เซอร์สำหรับฟังต่อเนื่อง');return;}
       const captureSession=currentSession;listeningIntentRef.current=true;setMicError(null);setCurrentTranscript('');setLiveTags([]);streamRally.current=crypto.randomUUID();streamSeen.current.clear();previewCues.current.clear();streamTeam.current=undefined;
-      const started=await continuousProvider.start({onLevel:setAudioLevel,onStatus:status=>{setIsRealMicActive(status!=='stopped');setVoiceState(status==='connecting'||status==='reconnecting'?'preparing':status==='stopped'?'ready':'listening');if(status==='stopped')listeningIntentRef.current=false;},onError:setMicError,onTranscript:(id,text,final)=>{
-        setCurrentTranscript(text);const extracted=extractLiveSequence(text,captureSession.sport,captureSession.playerA.name,captureSession.playerB.name,streamTeam.current);
+      const started=await continuousProvider.start({onLevel:setAudioLevel,onStatus:status=>{setIsRealMicActive(status!=='stopped');setVoiceState(status==='connecting'||status==='reconnecting'?'preparing':status==='stopped'?'ready':'listening');if(status==='stopped')listeningIntentRef.current=false;},onError:setMicError,onTranscript:(id,text,final,evidence)=>{
+        setCurrentTranscript(text);const extracted=extractLiveSequence(text,captureSession.sport,captureSession.playerA.name,captureSession.playerB.name,streamTeam.current,getVocabulary(captureSession.sport,latestSkills.current));
         setLiveTags(extracted.events.filter(e=>e.action).flatMap(e=>[e.actorSide||'?',e.actorPlayer?.jerseyNumber?'#'+e.actorPlayer.jerseyNumber:'',e.action!,e.originZone?'จาก '+e.originZone:'',e.targetZone?'ไป '+e.targetZone:'',e.receptionQuality!==undefined?'รับ '+e.receptionQuality:''].filter(Boolean)));
         if(!final&&settings.feedbackSound)extracted.events.forEach((e,i)=>{if(!e.action)return;const key=`${id}:${i}:${e.action}`;if(!previewCues.current.has(key)){previewCues.current.add(key);playAudioFeedback('beep');}});
         if(!final||streamSeen.current.has(id))return;
-        for(const key of previewCues.current)if(key.startsWith(id+':'))previewCues.current.delete(key);streamSeen.current.add(id);
+        for(const key of previewCues.current)if(key.startsWith(id+':'))previewCues.current.delete(key);streamSeen.current.add(id);if(streamSeen.current.size>1000)streamSeen.current.delete(streamSeen.current.values().next().value!);
         const rallyId=streamRally.current;const inheritedTeam=streamTeam.current;
-        if(!extracted.needsReview){const last=extracted.events.at(-1);streamTeam.current=last?.actorSide?{side:last.actorSide,action:last.action!}:undefined;}
-        if(extracted.events.some(e=>e.scoreImpact?.points===1)){streamRally.current=crypto.randomUUID();streamTeam.current=undefined;}
         setQueuedSequences(n=>n+1);
-        const work=()=>streamProcess.current(text,id,rallyId,captureSession,inheritedTeam).finally(()=>setQueuedSequences(n=>Math.max(0,n-1)));
-        // Clear grammar can commit immediately; ambiguous inference is ordered in its own queue.
-        if(!extracted.needsReview)void work();else streamQueue.current=streamQueue.current.then(work,work);
-      }},{language:settings.language,sport:currentSession.sport,deviceId:settings.inputDeviceId,provider});
+        const work=()=>streamProcess.current(text,id,rallyId,captureSession,inheritedTeam,evidence).finally(()=>setQueuedSequences(n=>Math.max(0,n-1)));
+        // Capture and preview stay live; all final mutations have one ordered commit path.
+        streamQueue.current=streamQueue.current.then(work,work);
+      }},{language:settings.language,sport:currentSession.sport,deviceId:settings.inputDeviceId,provider,keyterms:speechKeyterms(currentSession.sport,[currentSession.playerA.name,currentSession.playerB.name],skills)});
       if(!started){listeningIntentRef.current=false;setIsRealMicActive(false);setVoiceState('error');}return;
     }
     if(transcriptionRetryRef.current||listeningIntentRef.current||voiceState==='transcribing'||voiceState==='understanding')return;
@@ -529,7 +514,8 @@ export const ScoutProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setSessions((prev) =>
       prev.map((s) => {
         if (s.id !== currentSession.id) return s;
-        const replay = getSportDefinition(s.sport).calculateScore(s.events);
+        const replay = getSportDefinition(s.sport,s.format).calculateScore(s.events);
+        if(delta>0){const point:ParsedEvent={id:crypto.randomUUID(),sessionId:s.id,sport:s.sport,rallyId:crypto.randomUUID(),timestamp:new Date().toISOString(),actorSide:player,action:'Manual Point',outcome:'WINNER',scoreImpact:{points:1,sideAwarded:player},source:'manual',status:'CONFIRMED',recordType:'MANUAL_POINT'};return {...s,events:[point,...s.events]};}
         const correction:ParsedEvent={id:crypto.randomUUID(),sessionId:s.id,sport:s.sport,timestamp:new Date().toISOString(),action:'Score Correction',outcome:'IN_PLAY',scoreImpact:{points:0},source:'manual',status:'CONFIRMED',recordType:'SCORE_CORRECTION',scoreCorrection:{scoreA:player==='A'?Math.max(0,replay.scoreA+delta):replay.scoreA,scoreB:player==='B'?Math.max(0,replay.scoreB+delta):replay.scoreB,setsA:replay.setsA,setsB:replay.setsB,currentSet:replay.currentSet,reason:`Manual adjustment ${player} ${delta}`}};
         return {...s,events:[correction,...s.events]};
       })

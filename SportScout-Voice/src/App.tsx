@@ -1,19 +1,19 @@
 import {LocaleProvider} from './i18n/LocaleContext';
 import {useLocale} from './i18n/LocaleContext';
-import React from 'react';
+import React,{lazy,Suspense} from 'react';
 import { ScoutProvider, useScout } from './stores/ScoutContext';
 import { SpHeader } from './components/common/SpHeader';
 import { DesktopNavigation } from './components/common/DesktopNavigation';
 import { BottomNavigation } from './components/common/BottomNavigation';
 import { ScoutScreen } from './features/scout/ScoutScreen';
-import { StatsScreen } from './features/stats/StatsScreen';
-import { SkillsScreen } from './features/skills/SkillsScreen';
-import { SettingsScreen } from './features/settings/SettingsScreen';
+const StatsScreen=lazy(()=>import('./features/stats/StatsScreen').then(m=>({default:m.StatsScreen})));
+const SkillsScreen=lazy(()=>import('./features/skills/SkillsScreen').then(m=>({default:m.SkillsScreen})));
+const SettingsScreen=lazy(()=>import('./features/settings/SettingsScreen').then(m=>({default:m.SettingsScreen})));
 import { OnboardingWizard } from './features/onboarding/OnboardingWizard';
 import { NewSessionModal } from './features/session/NewSessionModal';
 import { EditEventModal } from './features/events/EditEventModal';
-import { SessionReviewScreen } from './features/session/SessionReviewScreen';
-import { FieldTestLab } from './features/developer/FieldTestLab';
+const SessionReviewScreen=lazy(()=>import('./features/session/SessionReviewScreen').then(m=>({default:m.SessionReviewScreen})));
+const FieldTestLab=lazy(()=>import('./features/developer/FieldTestLab').then(m=>({default:m.FieldTestLab})));
 
 const AppContent: React.FC = () => {
   const {t}=useLocale();
@@ -69,11 +69,12 @@ const AppContent: React.FC = () => {
 
           <div className="flex items-center gap-2 text-xs text-[#A2AAB7]">
             <span className="w-2 h-2 rounded-full bg-[#1FB56A]" />
-            <span className="font-mono text-[11px]">{apiStatus.hasApiKey?t('AI connection configured'):t('Local rules · review required')}</span>
+            <span className="font-mono text-[11px]">{apiStatus.hasApiKey?t('AI connection configured'):t('Local vocabulary rules ready')}</span>
           </div>
         </div>
 
         {/* Tab Router */}
+        <Suspense fallback={<p role="status">{t('Loading…')}</p>}>
         {activeTab === 'scout' && <ScoutScreen />}
 
         {activeTab === 'sessions' && <SessionReviewScreen />}
@@ -85,6 +86,7 @@ const AppContent: React.FC = () => {
         {activeTab === 'testlab' && <FieldTestLab />}
 
         {activeTab === 'settings' && <SettingsScreen />}
+        </Suspense>
       </main>
 
       {/* Mobile Sticky Bottom Navigation */}

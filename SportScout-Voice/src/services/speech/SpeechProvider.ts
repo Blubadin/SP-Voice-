@@ -1,3 +1,4 @@
+import {apiFetch} from '../apiClient';
 import {SportType} from '../../types/scout';
 export type SpeechErrorCode='permission_denied'|'no_microphone'|'device_disconnected'|'microphone_failure'|'network_error'|'no_speech'|'aborted'|'unknown';
 export interface SpeechError {code:SpeechErrorCode;message:string}
@@ -79,7 +80,7 @@ export class SpeechCaptureProvider implements ISpeechProvider {
 export async function transcribeAudio(audio:Blob,language:'th'|'en'){
  if(audio.size>4_000_000)throw Error('เสียงยาวเกินไป โปรดบันทึกไม่เกิน 90 วินาที / Recording is too large.');
  const bytes=new Uint8Array(await audio.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
- const res=await fetch('/api/transcribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({audio:btoa(binary),mimeType:audio.type.split(';')[0],language}),signal:AbortSignal.timeout(50000)});const data=await res.json();if(!res.ok||!data.success)throw Error(data.error||'ถอดเสียงไม่สำเร็จ / Transcription failed.');if(typeof data.transcript!=='string')throw Error('รูปแบบข้อความถอดเสียงไม่ถูกต้อง / Invalid transcript.');return data.transcript;
+ const res=await apiFetch('/api/transcribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({audio:btoa(binary),mimeType:audio.type.split(';')[0],language}),signal:AbortSignal.timeout(50000)});const data=await res.json();if(!res.ok||!data.success)throw Error(data.error||'ถอดเสียงไม่สำเร็จ / Transcription failed.');if(typeof data.transcript!=='string')throw Error('รูปแบบข้อความถอดเสียงไม่ถูกต้อง / Invalid transcript.');return data.transcript;
 }
 // Compatibility exports for existing imports; this is not a Gemini Live streaming provider.
 export {SpeechCaptureProvider as GeminiLiveTranscriptionProvider,SpeechCaptureProvider as BrowserSpeechFallbackProvider};

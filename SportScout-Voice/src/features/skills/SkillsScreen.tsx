@@ -84,8 +84,8 @@ export const SkillsScreen: React.FC = () => {
       <div className="flex items-start gap-2.5 p-3 rounded-xl bg-[#14231b] border border-[#22c55e]/30 text-xs text-gray-300">
         <Sparkles className="w-4 h-4 text-[#22c55e] shrink-0 mt-0.5" />
         <div>
-          <span className="font-bold text-[#4ade80]">{t("Aliases are hints only.")}</span>{' '}
-          {t("The AI scout interpreter understands natural language phrases, colloquial words, and variations outside the alias list automatically.")}</div>
+          <span className="font-bold text-[#4ade80]">{t("Aliases are used by local rules.")}</span>{' '}
+          {t("Known aliases are interpreted locally. Complex or uncertain phrases can use AI and may require review.")}</div>
       </div>
 
       {/* Tabs: My Skills / Templates & Sport selector */}

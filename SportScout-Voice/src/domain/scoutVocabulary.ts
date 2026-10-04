@@ -1,3 +1,6 @@
+import {INITIAL_SKILLS} from '../sports/skillData';
+import type {SkillItem} from '../types/scout';
+import {actions} from './validation';
 import {SportType,Side} from './types';
 export const actorAliases={A:['A','เอ','ทีมเอ','ทีม เอ','ทีม A','ฝั่งเอ','ฝั่ง เอ','ฝั่ง A'],B:['B','บี','ทีมบี','ทีม บี','ทีม B','ฝั่งบี','ฝั่ง บี','ฝั่ง B']};
 // Synonyms name observations; tactical variants stay subtypes, never extra legal actions.
@@ -17,5 +20,27 @@ export const vocabularyCategories={
  subtypes:{badminton:['โฟร์แฮนด์','แบ็กแฮนด์','ตรง','เฉียง','ครอส','สั้น','ยาว','สูง','เร็ว','ช้า'],volleyball:['จัมพ์โฟลต','โฟลต','ท็อปสปิน','อันเดอร์แฮนด์','บอลเร็วกลาง','บอลบี','บอลไหล','บอลสูง','หัวเสา','บีหลัง','สามเมตร','ตรง','เฉียง','ตีทัช','หยอด','บล็อกเดี่ยว','บล็อกคู่']}
 };
 export function canonicalSide(value:unknown):Side|undefined{if(typeof value!=='string')return;return (Object.keys(actorAliases) as Side[]).find(side=>actorAliases[side].some(alias=>alias.toLowerCase()===value.trim().toLowerCase()));}
-export function vocabularyPrompt(sport:SportType){return `Sports scouting vocabulary (use only ${sport}): ${JSON.stringify(sportVocabulary[sport])}. Categorized context ${JSON.stringify(vocabularyCategories)}. These are accepted aliases, not default actors. Preserve original speech. Unknown actors remain null. Latest explicit self correction wins: correct only the mentioned field; action corrections replace an action, not a new contact. Repeated excited words do not create extra touches unless a new actor, sequence marker or distinct contact is explicit. Player names resolve only through session names. Origin words describe ORIGIN, target words describe TARGET. Bare placement is ambiguous except explicit Drop placement; missing endpoints remain unknown. Tactical roles and subtypes are not zones and not a basis to invent players. In volleyball, "รับสาม" means Reception quality 3, NOT Zone 3. Numbers after เบอร์ are jerseys, after โซน are zones. Quick attack is Attack, not Set. "เซ็ตบอลเร็วกลาง" is one Set. A winning explicit +1/ได้แต้ม repeated means ONE point per rally; never one point per synonym. ERROR/BLOCKED awards opponent. Unknown winning side requires review. Speech may repeat, hesitate, correct and contain several contacts. Match pauses do not end a rally. Do not infer a winner from power, speed, cheers, ball landing or receipt quality alone. Never promote nonsense or unrelated conversation to confirmed data.`;}
-export function speechKeyterms(sport:SportType){return [...new Set(Object.values(sportVocabulary[sport]).map(v=>v[0]).concat(['ทีมเอ','ทีมบี','ได้แต้ม','เบอร์','โซน']))].slice(0,20);}
+export function vocabularyPrompt(sport:SportType,vocabulary=getVocabulary(sport)){return `Sports scouting vocabulary (use only ${sport}): ${JSON.stringify(vocabulary)}. Categorized context ${JSON.stringify(vocabularyCategories)}. These are accepted aliases, not default actors. Preserve original speech. Unknown actors remain null. Latest explicit self correction wins: correct only the mentioned field; action corrections replace an action, not a new contact. Repeated excited words do not create extra touches unless a new actor, sequence marker or distinct contact is explicit. Player names resolve only through session names. Origin words describe ORIGIN, target words describe TARGET. Bare placement is ambiguous except explicit Drop placement; missing endpoints remain unknown. Tactical roles and subtypes are not zones and not a basis to invent players. In volleyball, "รับสาม" means Reception quality 3, NOT Zone 3. Numbers after เบอร์ are jerseys, after โซน are zones. Quick attack is Attack, not Set. "เซ็ตบอลเร็วกลาง" is one Set. A winning explicit +1/ได้แต้ม repeated means ONE point per rally; never one point per synonym. ERROR/BLOCKED awards opponent. Unknown winning side requires review. Speech may repeat, hesitate, correct and contain several contacts. Match pauses do not end a rally. Do not infer a winner from power, speed, cheers, ball landing or receipt quality alone. Never promote nonsense or unrelated conversation to confirmed data.`;}
+export type Vocabulary=Record<string,string[]>;
+const extras:Record<SportType,Vocabulary>={
+ badminton:{Serve:['service','serves','เสริฟ','เสริ์ฟ'],Return:['return of serve','receive serve'],Smash:['smashes','ฟาด','ฟาดลูก','จัมพ์สแมช','jump smash'],Drop:['drop shot','drops','ลูกหยอด','ตีหยอด'],Clear:['clears','lob','โยนหลัง'],Drive:['drives'],Lift:['lifts','ยกหลัง'],Block:['blocks','ดักหน้าเน็ต'],'Net Shot':['netshot','ปั่นเน็ต','เล่นเน็ต'],'Net Kill':['netkill','เคาะหน้าเน็ต']},
+ volleyball:{Serve:['service','serves','jump serve','jump float serve'],Reception:['receive','receive serve','pass','รีเซฟชัน','รีเซฟชันบอลแรก'],Set:['sets','setting','เซ็ทบอล','ยกบอล'],Attack:['spike','spikes','spiking','smash','quick attack','pipe attack','roll shot','ตีหัวเสา','โจมตี'],Block:['blocks','kill block','คิลบล็อก','บล็อคแต้ม'],Dig:['digs','ดีก'],Cover:['โคฟเวอร์','คัฟเวอร์บอล'],'Free Ball':['freeball'],Overpass:['over pass'],Error:['fault','เสียเอง']}
+};
+export function getVocabulary(sport:SportType,skills:SkillItem[]=INITIAL_SKILLS):Vocabulary {
+ const vocabulary:Vocabulary={};
+ for(const [action,words] of Object.entries(sportVocabulary[sport])) {
+  const override=skills.find(s=>s.sport===sport&&s.name===action);
+  if(override?.enabled===false)continue;
+  vocabulary[action]=[...new Set([...words,...extras[sport][action]||[],...override?.aliases||[]])];
+ }
+ // A custom alias must target an existing legal action. Unknown actions stay tags/review.
+ for(const skill of skills.filter(s=>s.sport===sport&&s.enabled&&actions[sport].includes(s.name)))vocabulary[skill.name]=[...new Set([...vocabulary[skill.name]||[],...skill.aliases])];
+ return vocabulary;
+}
+export function aliasConflict(sport:SportType,action:string,alias:string,skills:SkillItem[]) {
+ const normalized=alias.trim().toLowerCase();
+ return Object.entries(getVocabulary(sport,skills)).find(([other,words])=>other!==action&&[other,...words].some(w=>w.toLowerCase()===normalized))?.[0];
+}
+export function speechKeyterms(sport:SportType,names:string[]=[],skills?:SkillItem[]) {
+ return [...new Set([...names.filter(n=>n&&!/^(Player|Team|Side) [AB]$/.test(n)),...Object.values(getVocabulary(sport,skills)).map(v=>v[0]),'ทีมเอ','ทีมบี','ได้แต้ม','เสียแต้ม','เบอร์','โซน'])].slice(0,24);
+}

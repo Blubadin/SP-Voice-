@@ -57,7 +57,9 @@ export interface ScoutEvent {
   source: EventSource;
   status: EventStatus;
   confidence?: number;
-  recordType?: 'SCORE_CORRECTION';
+  recordType?: 'SCORE_CORRECTION' | 'MANUAL_POINT';
+  captureSequence?:number;
+  speechEvidence?: {utteranceId:string;provider:string;receivedAt:number;gap?:boolean;words?:Array<{word:string;start?:number;end?:number;confidence?:number}>};
   scoreCorrection?: {scoreA:number;scoreB:number;setsA:number;setsB:number;currentSet:number;reason:string};
 
   // Snapshot calculated fields (populated by scoring engine)
