@@ -500,13 +500,15 @@ class IndexedDbStorage {
   async setItem(storeName: string, item: any): Promise<void> {
     const db = await this.getDB();
     if (!db) return;
-    try {
-      const tx = db.transaction(storeName, 'readwrite');
-      const store = tx.objectStore(storeName);
-      store.put(item);
-    } catch {
-      // ignore
-    }
+    await new Promise<void>((resolve,reject)=>{
+      const tx=db.transaction(storeName,'readwrite');tx.objectStore(storeName).put(item);
+      tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);
+    });
+  }
+
+  async replaceSessions(sessions:MatchSession[],updatedAt=Date.now()):Promise<boolean>{
+    const db=await this.getDB();if(!db)return false;
+    await new Promise<void>((resolve,reject)=>{const tx=db.transaction([STORE_SESSIONS,STORE_SETTINGS],'readwrite');tx.objectStore(STORE_SETTINGS).put({key:'session_snapshot',updatedAt,ids:sessions.map(s=>s.id)});const store=tx.objectStore(STORE_SESSIONS);store.clear();for(const session of sessions)store.put(session);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});return true;
   }
 
   async getAll(storeName: string): Promise<any[]> {
@@ -533,7 +535,7 @@ export const storageService = {
     try {
       const raw = localStorage.getItem(KEYS.SESSIONS);
       if (raw) {
-        const parsed = JSON.parse(raw);
+        const data = JSON.parse(raw);const parsed=Array.isArray(data)?data:data.sessions;
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch {
@@ -544,14 +546,24 @@ export const storageService = {
     return [fresh];
   },
 
-  saveSessions(sessions: MatchSession[]) {
-    try {
-      localStorage.setItem(KEYS.SESSIONS, JSON.stringify(sessions));
-      // Async mirror to IndexedDB
-      sessions.forEach((s) => idb.setItem(STORE_SESSIONS, s));
-    } catch {
-      // ignore
-    }
+  async hydrateSessions():Promise<MatchSession[]> {
+    let local:MatchSession[]=[];let localTime=0;
+    try{const raw=localStorage.getItem(KEYS.SESSIONS);if(raw){const data=JSON.parse(raw);local=Array.isArray(data)?data:data.sessions||[];localTime=data.updatedAt||0;}}catch{}
+    const [stored,settings]=await Promise.all([idb.getAll(STORE_SESSIONS),idb.getAll(STORE_SETTINGS)]);
+    const meta=settings.find(s=>s.key==='session_snapshot');
+    if(meta&&meta.updatedAt>localTime){const ids:string[]=meta.ids||[];return stored.filter(s=>ids.includes(s.id)&&Array.isArray(s.events)&&['badminton','volleyball'].includes(s.sport)).sort((a,b)=>ids.indexOf(a.id)-ids.indexOf(b.id));}
+    if(local.length)return local;
+    // Old mirrors may contain deleted sessions; only recover them when no main copy exists.
+    return meta?[]:stored.filter(s=>s&&typeof s.id==='string'&&Array.isArray(s.events)&&['badminton','volleyball'].includes(s.sport));
+  },
+
+  async saveSessions(sessions:MatchSession[]) {
+    if(typeof window==='undefined')return;
+    const updatedAt=Date.now();let localSaved=false;
+    try{localStorage.setItem(KEYS.SESSIONS,JSON.stringify({sessions,updatedAt}));localSaved=true;}catch{}
+    let dbSaved=false;
+    try{dbSaved=await idb.replaceSessions(sessions,updatedAt);}catch{}
+    if(!localSaved&&!dbSaved)throw Error('Session storage unavailable');
   },
 
   getActiveSessionId(): string {
@@ -588,7 +600,7 @@ export const storageService = {
     };
     const current = this.getSessions().filter((s) => s.id !== newDemo.id);
     const updated = [newDemo, ...current];
-    this.saveSessions(updated);
+    void this.saveSessions(updated).catch(()=>{});
     this.setActiveSessionId(newDemo.id);
     return newDemo;
   },
@@ -606,7 +618,7 @@ export const storageService = {
   saveSettings(settings: AppSettings) {
     try {
       localStorage.setItem(KEYS.SETTINGS, JSON.stringify(settings));
-      idb.setItem(STORE_SETTINGS, { key: 'app_settings', ...settings });
+      void idb.setItem(STORE_SETTINGS, { key: 'app_settings', ...settings }).catch(()=>{});
     } catch {
       // ignore
     }
@@ -625,7 +637,7 @@ export const storageService = {
   saveSkills(skills: SkillItem[]) {
     try {
       localStorage.setItem(KEYS.SKILLS, JSON.stringify(skills));
-      skills.forEach((sk) => idb.setItem(STORE_SKILLS, sk));
+      skills.forEach((sk) => {void idb.setItem(STORE_SKILLS, sk).catch(()=>{});});
     } catch {
       // ignore
     }
@@ -648,6 +660,7 @@ export const storageService = {
   },
 
   resetAll() {
+    void idb.replaceSessions([]).catch(()=>{});
     try {
       localStorage.removeItem(KEYS.SESSIONS);
       localStorage.removeItem(KEYS.ACTIVE_SESSION);

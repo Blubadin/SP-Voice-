@@ -558,5 +558,10 @@
   "Grouped aliases drive live tags; ambiguous speech goes to AI or review. This dictionary is expandable, not exhaustive.": "คำศัพท์แยกหมวดใช้ขึ้นแท็กสด ประโยคกำกวมส่งให้ AI หรือรีวิว เพิ่มคำศัพท์ได้ แต่ยังไม่ครอบคลุมทุกคำพูด",
   "Actors and jersey numbers": "ฝั่งและหมายเลขเสื้อ",
   "Origin / target": "ตำแหน่งต้นทาง / เป้าหมาย",
-  "Self-corrections and hesitation": "การพูดแก้และคำลังเล"
+  "Self-corrections and hesitation": "การพูดแก้และคำลังเล",
+  "Aliases are used by local rules.": "คำเรียกที่เพิ่มใช้แยกเหตุการณ์ในเครื่อง",
+  "Known aliases are interpreted locally. Complex or uncertain phrases can use AI and may require review.": "คำที่รู้จักแยกด้วยกฎในเครื่อง คำที่ซับซ้อนหรือไม่แน่ใจใช้ AI ช่วยและอาจต้องตรวจทาน",
+  "Local vocabulary rules ready": "พจนานุกรมและกฎพร้อมใช้งาน",
+  "Text interpretation": "เวลาแยกข้อความ",
+  "Text Test Lab & Benchmark Harness": "ทดสอบข้อความและประสิทธิภาพ"
 }

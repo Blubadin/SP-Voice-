@@ -1,3 +1,4 @@
+import {apiFetch} from '../../services/apiClient';
 import {useLocale} from '../../i18n/LocaleContext';
 import React, { useState } from 'react';
 import { useScout } from '../../stores/ScoutContext';
@@ -45,7 +46,7 @@ export const AiCoachSummaryCard: React.FC = () => {
     try {
       const matchScore = `${t(currentSession.playerA.name)} ${currentSession.playerA.score} - ${currentSession.playerB.score} ${t(currentSession.playerB.name)} (Sets: ${currentSession.setsA}-${currentSession.setsB})`;
 
-      const res = await fetch('/api/coach-summary', {
+      const res = await apiFetch('/api/coach-summary', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -4,6 +4,7 @@ export const zones = {badminton:['Front Left','Front Center','Front Right','Mid 
 export function validationErrors(e: Partial<ScoutEvent>): string[] {
  const errors:string[]=[];
  if(e.recordType==='SCORE_CORRECTION') {if(!e.scoreCorrection || ![e.scoreCorrection.scoreA,e.scoreCorrection.scoreB,e.scoreCorrection.setsA,e.scoreCorrection.setsB,e.scoreCorrection.currentSet].every(Number.isInteger)||Object.values(e.scoreCorrection).some(v=>typeof v==='number'&&v<0)||e.scoreCorrection.currentSet<1) errors.push('Invalid score correction');return errors;}
+ if(e.recordType==='MANUAL_POINT') {if(!['badminton','volleyball'].includes(e.sport!)||!['A','B'].includes(e.actorSide!)||e.outcome!=='WINNER'||e.scoreImpact?.points!==1||e.scoreImpact.sideAwarded!==e.actorSide)errors.push('Invalid manual point');return errors;}
  if(e.actorSide!=='A'&&e.actorSide!=='B') errors.push('Actor unknown');
  if(!e.sport||!actions[e.sport]?.includes(e.action!)) errors.push('Invalid action');
  for(const field of ['originZone','targetZone'] as const) if(e[field] && !zones[e.sport!]?.includes(e[field]!)) errors.push(`Invalid ${field}`);
@@ -15,4 +16,4 @@ export function validationErrors(e: Partial<ScoutEvent>): string[] {
  if(e.scoreImpact?.points!==(winner||loss?1:0)||e.scoreImpact?.sideAwarded!==expected) errors.push('Score conflicts with outcome');
  return errors;
 }
-export const officialEvents=(events:ScoutEvent[])=>events.filter(e=>e.status==='CONFIRMED'&&e.recordType!=='SCORE_CORRECTION'&&!validationErrors(e).length);
+export const officialEvents=(events:ScoutEvent[])=>events.filter(e=>e.status==='CONFIRMED'&&!e.recordType&&!validationErrors(e).length);

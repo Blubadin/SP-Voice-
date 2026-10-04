@@ -178,9 +178,9 @@ export const FieldTestLab: React.FC = () => {
       aiLatencyMs: aiMs,
       totalLatencyMs: totalMs,
       eventsCount: result.events.length,
-      hasCorrection: result.corrections.length>0,
-      hasUnknownField: result.unknownFields.length>0,
-      isMultiEvent: result.events.length>1,
+      hasCorrection: tc.hasCorrection,
+      hasUnknownField: tc.hasUnknownField,
+      isMultiEvent: tc.isMultiEvent,
       feedback: defaultFeedback,
       timestamp: new Date().toLocaleTimeString(),
     };
@@ -218,9 +218,9 @@ export const FieldTestLab: React.FC = () => {
         totalUtterances: 0,
         correctEvents: 0,
         incorrectEvents: 0,
-        correctionAccuracy: 0,
-        unknownFieldAccuracy: 0,
-        multiEventAccuracy: 0,
+        correctionAccuracy: 'N/A',
+        unknownFieldAccuracy: 'N/A',
+        multiEventAccuracy: 'N/A',
         falseEventRate: 0,
         medianLatency: 0,
         p95Latency: 0,
@@ -228,33 +228,33 @@ export const FieldTestLab: React.FC = () => {
     }
 
     const correctRecords = testRecords.filter(
-      (r) => r.feedback === 'correct' || r.feedback === 'partially_correct'
+      (r) => r.feedback === 'correct'
     );
     const incorrectRecords = testRecords.filter((r) => r.feedback === 'wrong');
 
     // Correction accuracy
-    const correctionTests = testRecords.filter((r) => r.hasCorrection);
+    const correctionTests = testRecords.filter((r) => r.hasCorrection&&r.feedback!=='unreviewed');
     const correctionCorrect = correctionTests.filter((r) => r.feedback === 'correct');
     const correctionAccuracy =
       correctionTests.length > 0
         ? Math.round((correctionCorrect.length / correctionTests.length) * 100)
-        : 100;
+        : 'N/A';
 
     // Unknown field accuracy (never invented)
-    const unknownTests = testRecords.filter((r) => r.hasUnknownField);
+    const unknownTests = testRecords.filter((r) => r.hasUnknownField&&r.feedback!=='unreviewed');
     const unknownCorrect = unknownTests.filter((r) => r.feedback === 'correct');
     const unknownFieldAccuracy =
       unknownTests.length > 0
         ? Math.round((unknownCorrect.length / unknownTests.length) * 100)
-        : 100;
+        : 'N/A';
 
     // Multi-event accuracy
-    const multiTests = testRecords.filter((r) => r.isMultiEvent);
+    const multiTests = testRecords.filter((r) => r.isMultiEvent&&r.feedback!=='unreviewed');
     const multiCorrect = multiTests.filter((r) => r.feedback === 'correct');
     const multiEventAccuracy =
       multiTests.length > 0
         ? Math.round((multiCorrect.length / multiTests.length) * 100)
-        : 100;
+        : 'N/A';
 
     // False event rate
     const safetyTests = testRecords.filter((r) => r.category === 'safety');
@@ -297,7 +297,7 @@ export const FieldTestLab: React.FC = () => {
             </div>
             <div>
               <h2 className="text-base font-bold text-white">
-                {t("Field Test Lab & Benchmark Harness")}</h2>
+                {t("Text Test Lab & Benchmark Harness")}</h2>
               <p className="text-xs text-gray-400">
                 {t("Evaluate natural speech latency, semantic self-corrections, and multi-event parsing")}</p>
             </div>
@@ -361,7 +361,7 @@ export const FieldTestLab: React.FC = () => {
             <span className="text-[10px] text-gray-400 uppercase font-sans block">
               {t("Self-Correction")}</span>
             <span className="text-xl font-black text-sky-400 mt-0.5 block">
-              {metrics.correctionAccuracy}%
+              {typeof metrics.correctionAccuracy==='number'?`${metrics.correctionAccuracy}%`:metrics.correctionAccuracy}
             </span>
             <span className="text-[10px] text-gray-500 font-sans">
               {t("Latest wins")}</span>
@@ -371,7 +371,7 @@ export const FieldTestLab: React.FC = () => {
             <span className="text-[10px] text-gray-400 uppercase font-sans block">
               {t("Unknown Field Acc")}</span>
             <span className="text-xl font-black text-amber-400 mt-0.5 block">
-              {metrics.unknownFieldAccuracy}%
+              {typeof metrics.unknownFieldAccuracy==='number'?`${metrics.unknownFieldAccuracy}%`:metrics.unknownFieldAccuracy}
             </span>
             <span className="text-[10px] text-gray-500 font-sans">
               {t("Zero invented")}</span>
@@ -384,7 +384,7 @@ export const FieldTestLab: React.FC = () => {
               {metrics.medianLatency} ms
             </span>
             <span className="text-[10px] text-gray-500 font-sans">
-              {t("Speech + AI")}</span>
+              {t("Text interpretation")}</span>
           </div>
 
           <div className="p-3 rounded-xl bg-[#161a22] border border-[#242b3a]">
@@ -540,7 +540,7 @@ export const FieldTestLab: React.FC = () => {
                 <div className="flex flex-wrap items-center justify-between text-[11px] font-mono text-gray-400 pt-1 border-t border-[#212634]">
                   <div>
                     {t("Speech Duration:")}{' '}
-                    <span className="text-white font-bold">{rec.speechLatencyMs} ms</span>
+                    <span className="text-white font-bold">ยังไม่วัด · ทดสอบด้วยข้อความ</span>
                   </div>
                   <div>
                     {t("AI Roundtrip:")}{' '}

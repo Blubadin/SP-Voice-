@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "buildCommand": "npm run build:vercel",
+  "outputDirectory": "dist/client",
+  "rewrites": [
+    {"source": "/((?!api/|assets/|scout-pcm-worklet.js|favicon.ico).*)", "destination": "/index.html"}
+  ]
+}

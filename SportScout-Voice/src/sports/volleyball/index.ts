@@ -1,3 +1,4 @@
+import {replayScore} from '../../domain/scoreReplay';
 import {scoreReplayOrder} from '../../domain/scoreOrder';
 import {officialEvents, validationErrors, zones as canonicalZones} from '../../domain/validation';
 import {parseSequence} from '../../domain/localParser';
@@ -49,98 +50,7 @@ export function getVolleyballZoneCoords(zoneName?: string, sideHint?: Side) {ret
  * - Set 5 (deciding set): 15 points, win by 2
  * Only CONFIRMED events affect the score.
  */
-export function calculateVolleyballScore(events: ScoutEvent[]): ScoreState {
-  const confirmedEvents = events.filter(e=>e.status==='CONFIRMED'&&e.sport==='volleyball'&&!validationErrors(e).length);
-
-  let setsA = 0;
-  let setsB = 0;
-  let currentSetScoreA = 0;
-  let currentSetScoreB = 0;
-  let currentSet = 1;
-  const segments: MatchSegment[] = [];
-  let isMatchFinished = false;
-  let matchWinner: Side | undefined;
-
-  const scoredRallies=new Set<string>();
-  const forwardEvents = scoreReplayOrder(confirmedEvents);
-
-  for (const event of forwardEvents) {
-    if(event.recordType==='SCORE_CORRECTION' && event.scoreCorrection){const c=event.scoreCorrection;currentSetScoreA=c.scoreA;currentSetScoreB=c.scoreB;setsA=c.setsA;setsB=c.setsB;currentSet=c.currentSet;segments.splice(0,segments.length,...segments.filter(s=>s.segmentIndex<c.currentSet));isMatchFinished=false;matchWinner=undefined;continue;}
-    if (isMatchFinished) continue;
-
-    if (event.scoreImpact && event.scoreImpact.points > 0 && event.scoreImpact.sideAwarded) {
-      if(event.rallyId&&scoredRallies.has(event.rallyId))continue;
-      if(event.rallyId)scoredRallies.add(event.rallyId);
-      if (event.scoreImpact.sideAwarded === 'A') {
-        currentSetScoreA += event.scoreImpact.points;
-      } else {
-        currentSetScoreB += event.scoreImpact.points;
-      }
-
-      // Sets 1-4 require 25 pts, Set 5 requires 15 pts. Win by >= 2.
-      const targetPts = currentSet === 5 ? 15 : 25;
-
-      const wonA = currentSetScoreA >= targetPts && currentSetScoreA - currentSetScoreB >= 2;
-      const wonB = currentSetScoreB >= targetPts && currentSetScoreB - currentSetScoreA >= 2;
-
-      if (wonA) {
-        setsA += 1;
-        segments.push({
-          segmentIndex: currentSet,
-          scoreA: currentSetScoreA,
-          scoreB: currentSetScoreB,
-          isCompleted: true,
-          winnerSide: 'A',
-        });
-        if (setsA >= 3) {
-          isMatchFinished = true;
-          matchWinner = 'A';
-        } else {
-          currentSet += 1;
-          currentSetScoreA = 0;
-          currentSetScoreB = 0;
-        }
-      } else if (wonB) {
-        setsB += 1;
-        segments.push({
-          segmentIndex: currentSet,
-          scoreA: currentSetScoreA,
-          scoreB: currentSetScoreB,
-          isCompleted: true,
-          winnerSide: 'B',
-        });
-        if (setsB >= 3) {
-          isMatchFinished = true;
-          matchWinner = 'B';
-        } else {
-          currentSet += 1;
-          currentSetScoreA = 0;
-          currentSetScoreB = 0;
-        }
-      }
-    }
-  }
-
-  if (!isMatchFinished) {
-    segments.push({
-      segmentIndex: currentSet,
-      scoreA: currentSetScoreA,
-      scoreB: currentSetScoreB,
-      isCompleted: false,
-    });
-  }
-
-  return {
-    setsA,
-    setsB,
-    currentSet,
-    scoreA: currentSetScoreA,
-    scoreB: currentSetScoreB,
-    segments,
-    isMatchFinished,
-    matchWinner,
-  };
-}
+export function calculateVolleyballScore(events: ScoutEvent[]): ScoreState {return replayScore(events,'volleyball').state;}
 
 /**
  * Calculates authentic Volleyball statistics strictly from CONFIRMED events.
